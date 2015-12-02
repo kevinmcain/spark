@@ -30,6 +30,7 @@ object NeedlemanWunsch {
     // compound and maybe some other stuff such as the substitution matrix
     // it doesn't work as expected, i.e., you can't continually broadcast
     val broadcast = sc.broadcast(0)
+    val brdcstQueryCompound = sc.broadcast(0)
     val accum = sc.accumulator(0)
 
     
@@ -46,10 +47,33 @@ object NeedlemanWunsch {
        // continue until broadcast says this partition can go 
       //}
       
-      partitionOfTarget.foreach(compound => {
+      partitionOfTarget.foreach(line => {
+
+        // RDD Transform
         
-        //println(compound._1 )
-        // creating a new RDD, or making RDD transform of target
+        // line._2 is the target compound
+        // line._3 is value for current
+        // line._4 is the value for left which equals score for previous compound
+        // line._5 is the value for corner which equals score for previous compound, previous rdd
+        // line._6 is the value for top which equals score for same compound previous rdd
+        
+        
+			 if(line._2 == brdcstQueryCompound)
+			 {
+				 //line._3 = line._5+1;
+			 }
+			 else
+			 {
+				 //if (line._4 > line._6)
+				 {
+					 //line._3 = line._4;
+				 }
+				 //else
+				 {
+					 //line._3 = line._6
+				 }
+			 }
+        
       })
       
       accum += index+1

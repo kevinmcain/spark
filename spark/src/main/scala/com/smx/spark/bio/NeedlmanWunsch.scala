@@ -32,6 +32,19 @@ object NeedlemanWunsch {
     val broadcast = sc.broadcast(0)
     val brdcstQueryCompound = sc.broadcast(0)
     val accum = sc.accumulator(0)
+    
+    val rdd = newRDD
+    
+    rdd.foreachPartition( partition => { 
+      
+      // 1. open jdbc connection
+      // 2. poll database for the completion of dependent partition
+      // 3. read dependent value from computed dependent partition
+      // 4. compute this partition
+      // 5. write this edge case result to database
+      // 6. close connection
+    })
+     
 
     
     newRDD.foreachPartitionAsync( partitionOfTarget => { 

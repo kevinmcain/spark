@@ -1,0 +1,3 @@
+resources/atwo.fna,resources/aone.fna
+resources/athree.fna,resources/aone.fna
+resources/athree.fna,resources/atwo.fna

@@ -23,13 +23,16 @@ object NeedlemanWunsch {
     
     val seqRDD = sc.textFile(sequencePairs, 3)
     
-//    val targetRDD = sc.textFile(fastaFileTarget, 10).flatMap(_.toCharArray())
+    val targetRDD = sc.textFile(sequencePairs, 3)
     
-//    val newRDD = targetRDD.mapPartitionsWithIndex { 
-//      (index:Int, value:Iterator[(Char)]) => {
-//          value.map(compound => (index, compound))
-//        }    
-//     }
+      val newRDD = targetRDD.mapPartitionsWithIndex { 
+        (index:Int, value:Iterator[(String)]) => {
+            value.map(pair => (index, pair))
+          }    
+       }
+    
+    newRDD.foreachPartition(record => { record.foreach(println)})
+    
 
     // you can really only use the broadcast for shipping the query  
     // compound and maybe some other stuff such as the substitution matrix
@@ -40,12 +43,15 @@ object NeedlemanWunsch {
     
     //val rdd = newRDD
     
-    seqRDD.foreachPartition( partition => { 
+    seqRDD.foreachPartition( sequencePair => { 
+
+      var i=0
       
-      partition.foreach { record => 
-        val sequenceLocation = record.split(",") 
-        val queryLocation = sequenceLocation(0)
-        val targetLocation = sequenceLocation(1)
+      sequencePair.foreach { pair => 
+        i+=1
+        val sequenceList = pair.split(",") 
+        val queryLocation = sequenceList(0)
+        val targetLocation = sequenceList(1)
         
         println(queryLocation)
         println(targetLocation)
@@ -58,10 +64,12 @@ object NeedlemanWunsch {
           println(c)
         })
         
- 
+        println(i)
         
 
       }
+      
+      println("done with pair")
       // 1. open jdbc connection
       // 2. poll database for the completion of dependent partition
       // 3. read dependent value from computed dependent partition

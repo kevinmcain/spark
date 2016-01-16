@@ -1,4 +1,3 @@
-header
-src/main/resources/atwo.fna,src/main/resources/aone.fna
-src/main/resources/athree.fna,src/main/resources/aone.fna
-src/main/resources/athree.fna,src/main/resources/atwo.fna
+0,src/main/resources/atwo.fna,src/main/resources/aone.fna
+1,src/main/resources/athree.fna,src/main/resources/aone.fna
+2,src/main/resources/athree.fna,src/main/resources/atwo.fna

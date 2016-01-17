@@ -1,10 +1,14 @@
 package com.smx.spark.bio;
 
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
+import java.util.List;
 
 import org.apache.spark.api.java.*;
 import org.apache.spark.api.java.function.*;
+import org.apache.spark.Partitioner;
 import org.apache.spark.SparkConf;
 
 import scala.Tuple2;
@@ -17,44 +21,82 @@ public class NeedlmanWunsch {
         .setAppName("Bio Application")
         .setMaster("local"));
 		
-		JavaRDD<String> inputRDD = sc.textFile(args[0], 4); // partition to number of seq pairs
+		JavaRDD<String> inputRDD = sc.textFile(args[0],3); // partition to number of seq pairs
 		
-		inputRDD.foreach(line -> { 
-			System.out.println(line);	
-		});
+		JavaPairRDD<Integer, String> rdd = inputRDD
+				.mapToPair((s) ->  {
+					Integer i = Integer.parseInt(s.substring(0, 1));
+					
+					return new Tuple2<Integer, String>(i, s.substring(2));
+				})
+				.partitionBy(new CustomPartitioner(3,3));
 		
-		JavaRDD<Node> sequencePairs = inputRDD.mapPartitionsWithIndex(
-	            new Function2<Integer, Iterator<String>, Iterator<Node>>() {
-
-	                /**
-					 * 
-					 */
-					private static final long serialVersionUID = 1L;
-
-					public Iterator<Node> call(Integer partitionId, Iterator<String> strings)
-	                    throws Exception {
-	                    return new MyIterator(partitionId, strings);
-	                }
-	            },
-        false);
-	    
-		sequencePairs.foreachPartition(node -> { 
-	    	
+//		rdd.foreach(line -> { 
+//			System.out.println(line);	
+//		});
+		
+		rdd.foreachPartition(node -> { 
+    	
 			// TODO: port all alignment code 
 			
 		 	int[][][] scores;
 	        int[] dim = {31,31,3}; // length of query, length of target, 3
-
-            scores = new int[dim[0]][][];
-            scores[0] = new int[dim[1]][dim[2]];
-            scores[1] = new int[dim[1]][dim[2]];
+	
+	        scores = new int[dim[0]][][];
+	        scores[0] = new int[dim[1]][dim[2]];
+	        scores[1] = new int[dim[1]][dim[2]];
 		
-			
+
 	    	System.out.println(node.next());
-	    	
-    	});
+    	
+		});
+		
+		
+//		JavaRDD<Tuple2<Integer, String>> sequencePairs = inputRDD.mapPartitionsWithIndex(
+//	            new Function2<Integer, Iterator<String>, Iterator<Tuple2<Integer, String>>>() {
+//
+//	                /**
+//					 * 
+//					 */
+//					private static final long serialVersionUID = 1L;
+//
+//					public Iterator<Tuple2<Integer, String>> call(Integer k, Iterator<String> v)
+//	                    throws Exception {
+//						
+//						List<Tuple2<Integer, String>> list = new ArrayList<Tuple2<Integer, String>>();
+//						while (v.hasNext())
+//							list.add(new Tuple2<Integer, String>(k, v.next()));
+//
+//						return list.iterator();
+//	                    //return new Iterator<Tuple2<Integer, String>>(partitionId, strings);
+//	                }
+//	            },
+//        true);
 	    
 	}
+}
+
+class CustomPartitioner extends Partitioner {
+
+	Integer partitions;
+	Integer elements;
+	
+	public CustomPartitioner(Integer partitions, Integer elements) {
+		this.partitions = partitions;
+		this.elements = elements;
+	}
+	
+	@Override
+	public int getPartition(Object arg0) {
+		Integer k = (Integer)arg0;
+		return k * partitions / elements;
+	}
+
+	@Override
+	public int numPartitions() {
+		return partitions;
+	}
+	
 }
 
 // spark-nndescent/src/main/java/info/debatty/spark/nndescent/ExampleStringCosineSimilarity.java
@@ -141,6 +183,13 @@ class Node<T> implements Serializable {
     }
     
 }
+
+
+// Simple word count program
+//JavaPairRDD<String, Integer> counts = inputRDD
+//.flatMap(x -> Arrays.asList(x.split(" ") ) )
+//.mapToPair(x -> new Tuple2<String, Integer>(x, 1) )
+//.reduceByKey( (x, y) -> x + y );
 
 //JavaRDD<String> sequencePairs = inputRDD.
 //mapPartitionsWithIndex((index, value) -> {

@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import org.apache.log4j.Logger;
+import org.apache.log4j.PropertyConfigurator;
 
 import org.apache.spark.api.java.*;
 import org.apache.spark.api.java.function.*;
@@ -14,14 +16,24 @@ import org.apache.spark.SparkConf;
 import scala.Tuple2;
 
 public class NeedlmanWunsch {
+	
+	static Logger logger = Logger.getLogger(NeedlmanWunsch.class.getName());
+	
 	// program arguments: src/main/resources/sequencePairs.txt
 	public static void main(String[] args) {
 		
-		JavaSparkContext sc = new JavaSparkContext(new SparkConf()
-        .setAppName("Bio Application")
-        .setMaster("local"));
+		logger.info("have entered the main program");
 		
-		JavaRDD<String> inputRDD = sc.textFile(args[0],3); // partition to number of seq pairs
+//   for deployment		
+//		JavaSparkContext sc = new JavaSparkContext(new SparkConf()
+//        	.setAppName("Bio Application"));
+		
+		JavaSparkContext sc = new JavaSparkContext(new SparkConf()
+    		.setAppName("Bio Application")
+        	.setMaster("local[1]"));
+		
+		JavaRDD<String> inputRDD = sc.textFile(args[0]); // partition to number of seq pairs
+		//JavaRDD<String> inputRDD = sc.textFile("src/main/resources/sequencePairs.txt",3); // partition to number of seq pairs
 		
 		JavaPairRDD<Integer, String> rdd = inputRDD
 				.mapToPair((s) ->  {
@@ -46,6 +58,10 @@ public class NeedlmanWunsch {
 	        scores[0] = new int[dim[1]][dim[2]];
 	        scores[1] = new int[dim[1]][dim[2]];
 		
+	        
+			//File file = new File("output/"+dnaSeq.getAccession());
+			//FastaWriterHelper.writeSequence(file, dnaSeq);
+	        
 
 	    	System.out.println(node.next());
     	
@@ -78,6 +94,10 @@ public class NeedlmanWunsch {
 
 class CustomPartitioner extends Partitioner {
 
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
 	Integer partitions;
 	Integer elements;
 	

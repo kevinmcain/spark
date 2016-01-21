@@ -1,17 +1,28 @@
 package com.smx.spark.bio;
 
+import java.io.File;
+import java.io.InputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
-import org.apache.log4j.Logger;
-import org.apache.log4j.PropertyConfigurator;
+import java.util.Map;
 
+import org.apache.log4j.Logger;
 import org.apache.spark.api.java.*;
-import org.apache.spark.api.java.function.*;
 import org.apache.spark.Partitioner;
 import org.apache.spark.SparkConf;
+import org.biojava.nbio.core.sequence.DNASequence;
+import org.biojava.nbio.core.sequence.io.FastaReaderHelper;
+import org.biojava.nbio.core.sequence.io.FastaWriterHelper;
+
+import com.amazonaws.auth.InstanceProfileCredentialsProvider;
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.AmazonS3Client;
+import com.amazonaws.services.s3.model.GetObjectRequest;
+import com.amazonaws.services.s3.model.S3Object;
+import com.amazonaws.services.s3.model.S3ObjectInputStream;
+
 
 import scala.Tuple2;
 
@@ -24,13 +35,13 @@ public class NeedlmanWunsch {
 		
 		logger.info("have entered the main program");
 		
-//   for deployment		
-//		JavaSparkContext sc = new JavaSparkContext(new SparkConf()
-//        	.setAppName("Bio Application"));
-		
+   //for deployment		
 		JavaSparkContext sc = new JavaSparkContext(new SparkConf()
-    		.setAppName("Bio Application")
-        	.setMaster("local[1]"));
+        	.setAppName("Bio Application"));
+		
+//		JavaSparkContext sc = new JavaSparkContext(new SparkConf()
+//    		.setAppName("Bio Application")
+//        	.setMaster("local[1]"));
 		
 		JavaRDD<String> inputRDD = sc.textFile(args[0]); // partition to number of seq pairs
 		//JavaRDD<String> inputRDD = sc.textFile("src/main/resources/sequencePairs.txt",3); // partition to number of seq pairs
@@ -42,6 +53,7 @@ public class NeedlmanWunsch {
 					return new Tuple2<Integer, String>(i, s.substring(2));
 				})
 				.partitionBy(new CustomPartitioner(3,3));
+
 		
 //		rdd.foreach(line -> { 
 //			System.out.println(line);	
@@ -49,24 +61,64 @@ public class NeedlmanWunsch {
 		
 		rdd.foreachPartition(node -> { 
     	
-			// TODO: port all alignment code 
+			// TODO: port all alignment code
 			
-		 	int[][][] scores;
-	        int[] dim = {31,31,3}; // length of query, length of target, 3
-	
-	        scores = new int[dim[0]][][];
-	        scores[0] = new int[dim[1]][dim[2]];
-	        scores[1] = new int[dim[1]][dim[2]];
-		
-	        
-			//File file = new File("output/"+dnaSeq.getAccession());
-			//FastaWriterHelper.writeSequence(file, dnaSeq);
-	        
+	        if (node.hasNext()){
+	        	
+	        	Tuple2<Integer, String> seqPair = node.next();
+	        	String[] files = seqPair._2().split(",");
+	        	String queryFileName = files[0];
+	        	//String targetFileName = files[1];
+	        	
+	        	//JavaRDD<String> queryRDD = ?textFile(queryFileName);
+	        	
 
-	    	System.out.println(node.next());
-    	
+	        	////////////////////////////////////////////////////////////
+	        	try {
+
+	    			AmazonS3 s3Client = new AmazonS3Client(new InstanceProfileCredentialsProvider());
+	    	    	GetObjectRequest request = new GetObjectRequest("smx.spark.bio.bucket","input/aone.fna");
+	    	        S3Object object = s3Client.getObject(request);
+	    	        InputStream in = object.getObjectContent();	
+	        		
+	            	Map<String, DNASequence> linkedHashMap = 
+	            			FastaReaderHelper.readFastaDNASequence(in); //input
+	    	
+	        		List<DNASequence> list = 
+	        				new ArrayList<DNASequence>(linkedHashMap.values());
+	    	
+		        	//File file = new File(list.get(0).getAccession().toString());
+	        		File file = new File("test");
+		        	FastaWriterHelper.writeSequence(file, list.get(0));
+	        		
+	    			//File file = new File("output/"+dnaSeq.getAccession());
+	    			
+	    			//FastaWriterHelper.writeSequence(file, list.get(0));
+	        	} catch(Exception e) {
+	        		logger.info(e.getMessage());
+	        	}
+	        	////////////////////////////////////////////////////////////
+
+
+	        	//InputStream input = new ByteArrayInputStream(queryRDD.toString().getBytes());
+	        	
+	        	//File file = new File(queryFileName);
+	        	
+	        	//Map<String, DNASequence> linkedHashMap = 
+	        			//FastaReaderHelper.readFastaDNASequence(file); //input
+	        	
+	        	//List<DNASequence> list = 
+	        			//new ArrayList<DNASequence>(linkedHashMap.values());
+	        	
+	        	//File file = new File("output/"+dnaSeq.getAccession());
+	        	//FastaWriterHelper.writeSequence(file, list.get(0));
+	        	
+	        	//queryRDD.saveAsTextFile(queryFileName+"spark");
+	        }
+	        
 		});
 		
+		logger.info("test complete");
 		
 //		JavaRDD<Tuple2<Integer, String>> sequencePairs = inputRDD.mapPartitionsWithIndex(
 //	            new Function2<Integer, Iterator<String>, Iterator<Tuple2<Integer, String>>>() {
@@ -200,22 +252,5 @@ class Node<T> implements Serializable {
         int hash = 5;
         hash = 83 * hash + (this.id != null ? this.id.hashCode() : 0);
         return hash;
-    }
-    
+    }   
 }
-
-
-// Simple word count program
-//JavaPairRDD<String, Integer> counts = inputRDD
-//.flatMap(x -> Arrays.asList(x.split(" ") ) )
-//.mapToPair(x -> new Tuple2<String, Integer>(x, 1) )
-//.reduceByKey( (x, y) -> x + y );
-
-//JavaRDD<String> sequencePairs = inputRDD.
-//mapPartitionsWithIndex((index, value) -> {
-//    if(index==0 && value.hasNext()){
-//        value.next();
-//        return value;
-//    }else
-//        return value;
-//}, false);

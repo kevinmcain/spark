@@ -122,7 +122,7 @@ public class WriteDNASequence {
 	
 		
 		rdd.foreach(line -> { 
-			System.out.println(line);	
+			logger.info(line);	
 		});
 		
 		rdd.foreachPartition(node -> { 

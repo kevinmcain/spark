@@ -13,6 +13,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.log4j.Logger;
+import org.apache.spark.Partitioner;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
@@ -173,4 +174,31 @@ public class WriteDNASequence {
 		logger.info("writeDNASequenceFromClusterNodes complete");;
 	}
 
+}
+
+class CustomPartitioner extends Partitioner {
+
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
+	Integer partitions;
+	Integer elements;
+	
+	public CustomPartitioner(Integer partitions, Integer elements) {
+		this.partitions = partitions;
+		this.elements = elements;
+	}
+	
+	@Override
+	public int getPartition(Object arg0) {
+		Integer k = (Integer)arg0;
+		return k * partitions / elements;
+	}
+
+	@Override
+	public int numPartitions() {
+		return partitions;
+	}
+	
 }

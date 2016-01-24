@@ -5,6 +5,7 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.biojava.nbio.core.sequence.DNASequence;
 import org.biojava.nbio.core.sequence.io.FastaReaderHelper;
@@ -17,12 +18,16 @@ import org.biojava.nbio.core.sequence.io.FastaWriterHelper;
  */
 public class SDNASequence implements Serializable {
 
-	private DNASequence dnaSequence;
+	private transient DNASequence dnaSequence;
 	
 	/**
 	 * 
 	 */
 	private static final long serialVersionUID = 2814589781198243348L;
+	
+	public SDNASequence() {
+		//this.dnaSequence = null;
+	}
 
 	/**
 	 * 
@@ -32,11 +37,16 @@ public class SDNASequence implements Serializable {
 	private void writeObject(java.io.ObjectOutputStream stream)
             throws IOException {
 		
-	   try {
-		   FastaWriterHelper.writeSequence(stream, this.dnaSequence);
-	   } catch (Exception e) {
-		   throw new IOException(e.getMessage());
-	   }
+		try {
+			   
+			if ( this.dnaSequence == null ) {
+				return;
+			}
+			   
+			FastaWriterHelper.writeSequence(stream, this.dnaSequence);
+		} catch (Exception e) {
+			throw new IOException(e.getMessage());
+		}
 
 		//http://stackoverflow.com/questions/12963445/serialization-readobject-writeobject-overides		
 		//        stream.writeObject(name);
@@ -52,6 +62,10 @@ public class SDNASequence implements Serializable {
 	 */
 	private void readObject(java.io.ObjectInputStream stream)
             throws IOException, ClassNotFoundException {
+		
+		if ( this.dnaSequence == null ) {
+			return;
+		}
 		
     	Map<String, DNASequence> linkedHashMap = 
     			FastaReaderHelper.readFastaDNASequence(stream);

@@ -5,6 +5,7 @@ import java.io.File;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +42,70 @@ public class WriteDNASequence {
 	public  WriteDNASequence(String[] args) {
 		writeDNASequenceFromClusterNodes(args);
 	}
+	
+	/** There is a bug with sc wholeTextFiles function reading from S3 buckets
+	 * http://stackoverflow.com/questions/31575367/loading-data-from-aws-s3-through-apache-spark
+	 * https://issues.apache.org/jira/browse/SPARK-4414
+	 * http://michaelryanbell.com/processing-whole-files-spark-s3.html
+	 */
+	private static void wholeTextFilesBug() {
+		try {
+			logger.info("starting NeedlmanWunsch at " + InetAddress.getLocalHost().getHostName());	
+		} catch(Exception e) {
+			logger.info(e.getMessage());	
+		}
+		
+		// for deployment		
+		JavaSparkContext sc = new JavaSparkContext(new SparkConf()
+        	.setAppName("Bio Application"));
+		
+//		// for development
+//		JavaSparkContext sc = new JavaSparkContext(new SparkConf()
+//    		.setAppName("Bio Application")
+//        	.setMaster("local[1]"));
+		
+		//JavaRDD<String> inputRDD = sc.textFile(args[0]); // partition to number of seq pairs
+		//JavaRDD<String> inputRDD = sc.textFile("src/main/resources/sequencePairs.txt",3); // partition to number of seq pairs
+		
+		logger.info("starting wholeTextFiles");
+		
+		// C:/genomes/seq
+		JavaPairRDD<String, String> rddAll = sc.wholeTextFiles
+				("s3://smx.spark.bio.bucket//seq").partitionBy(new AutoPartitioner(3,3));
+
+		logger.info("starting foreach");
+
+		rddAll.foreach(line -> { 
+			logger.info(line._1());
+			logger.info(InetAddress.getLocalHost().getHostName());
+		});
+
+		rddAll.foreachPartition(record -> {
+			
+			if (record.hasNext()) {
+			
+				// InetAddress.getLocalHost().getHostName()
+				Tuple2<String, String> dnaSeq = record.next();
+
+				String[] parts = dnaSeq._1().split("/");
+				String fileName = parts[parts.length-1];
+				
+		    	Path path = new Path("out/"+fileName);
+		    	Configuration configuration = new Configuration();
+		    	FileSystem hdfs = path.getFileSystem(configuration);
+		    	if ( hdfs.exists( path )) { hdfs.delete( path, true ); } 
+		    	OutputStream os = hdfs.create(path, true);
+		    	BufferedWriter br = new BufferedWriter( new OutputStreamWriter( os, "UTF-8" ) );
+		    	br.write(dnaSeq._2());
+		    	br.write(InetAddress.getLocalHost().getHostName());
+		    	br.close();
+		    	hdfs.close();
+			}
+		});
+		
+		logger.info("NeedlmanWunsch complete");
+	}
+	
 	
 	/** Have tested on master node in EMR cluster
 	 *  to verify output.txt, run cmd from emr shell> hdfs dfs -cat output.txt

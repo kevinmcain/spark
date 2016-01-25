@@ -2,6 +2,7 @@ package com.smx.spark.bio.part;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +20,7 @@ import org.biojava.nbio.core.sequence.io.FastaWriterHelper;
 public class SDNASequence implements Serializable {
 
 	private transient DNASequence dnaSequence;
+	private String sequence = "";
 	
 	/**
 	 * 
@@ -27,6 +29,22 @@ public class SDNASequence implements Serializable {
 	
 	public SDNASequence() {
 		//this.dnaSequence = null;
+	}
+	
+	public void setDNASequence(java.io.InputStream stream) throws IOException {
+
+    	Map<String, DNASequence> linkedHashMap = 
+    			FastaReaderHelper.readFastaDNASequence(stream);
+
+		List<DNASequence> list = 
+				new ArrayList<DNASequence>(linkedHashMap.values());
+		
+		this.dnaSequence = list.get(0);
+		this.sequence = dnaSequence.toString() + " writing host " + InetAddress.getLocalHost().getHostName();
+	}
+	
+	public String getDNASequence() {
+		return this.sequence;
 	}
 
 	/**
@@ -38,12 +56,8 @@ public class SDNASequence implements Serializable {
             throws IOException {
 		
 		try {
-			   
-			if ( this.dnaSequence == null ) {
-				return;
-			}
-			   
-			FastaWriterHelper.writeSequence(stream, this.dnaSequence);
+			stream.writeObject(this.sequence);
+			//FastaWriterHelper.writeSequence(stream, this.dnaSequence);
 		} catch (Exception e) {
 			throw new IOException(e.getMessage());
 		}
@@ -62,19 +76,9 @@ public class SDNASequence implements Serializable {
 	 */
 	private void readObject(java.io.ObjectInputStream stream)
             throws IOException, ClassNotFoundException {
+			
+		this.sequence = (String) stream.readObject();
 		
-		if ( this.dnaSequence == null ) {
-			return;
-		}
-		
-    	Map<String, DNASequence> linkedHashMap = 
-    			FastaReaderHelper.readFastaDNASequence(stream);
-
-		List<DNASequence> list = 
-				new ArrayList<DNASequence>(linkedHashMap.values());
-		
-		this.dnaSequence = list.get(0);
-    	
 		//http://stackoverflow.com/questions/12963445/serialization-readobject-writeobject-overides    	
 		//        name = (String) stream.readObject();
 		//        id = stream.readInt();

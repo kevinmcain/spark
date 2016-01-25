@@ -1,13 +1,26 @@
 package com.smx.spark.bio;
 
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.io.Serializable;
+import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import com.smx.spark.bio.part.Partition;
+import com.smx.spark.bio.part.DNAPartitioner;
+import com.smx.spark.bio.part.SDNASequence;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.FileUtil;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.util.Progressable;
 import org.apache.log4j.Logger;
 import org.apache.spark.api.java.*;
 import org.apache.spark.Partitioner;
@@ -23,7 +36,6 @@ import com.amazonaws.services.s3.model.GetObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
 
-
 import scala.Tuple2;
 
 public class NeedlmanWunsch {
@@ -33,224 +45,80 @@ public class NeedlmanWunsch {
 	// program arguments: src/main/resources/sequencePairs.txt
 	public static void main(String[] args) {
 		
-		logger.info("have entered the main program");
+		//WriteDNASequence.wholeTextFilesBug();
 		
-   //for deployment		
+		try {
+			logger.info("starting NeedlmanWunsch at " + InetAddress.getLocalHost().getHostName());	
+		} catch(Exception e) {
+			logger.info(e.getMessage());	
+		}
+		
+		// for deployment		
 		JavaSparkContext sc = new JavaSparkContext(new SparkConf()
         	.setAppName("Bio Application"));
 		
+//		// for development
 //		JavaSparkContext sc = new JavaSparkContext(new SparkConf()
 //    		.setAppName("Bio Application")
 //        	.setMaster("local[1]"));
 		
-		JavaRDD<String> inputRDD = sc.textFile(args[0]); // partition to number of seq pairs
 		//JavaRDD<String> inputRDD = sc.textFile("src/main/resources/sequencePairs.txt",3); // partition to number of seq pairs
+		//JavaRDD<String> inputRDD = sc.textFile(args[0]); // partition to number of seq pairs
+		JavaRDD<String> inputRDD = sc.textFile(args[0]);
 		
-		JavaPairRDD<Integer, String> rdd = inputRDD
-				.mapToPair((s) ->  {
-					Integer i = Integer.parseInt(s.substring(0, 1));
+		Integer count = new Integer((int)inputRDD.count());
+		
+		logger.info("loading data from S3 bucket");
+		
+		JavaPairRDD<Partition, SDNASequence> sequenceRDD = inputRDD
+				.mapToPair((line) ->  {
+					String[] tk = line.split(",");
+					Integer id = Integer.parseInt(tk[0]);
+					String keyName = tk[1]; 
 					
-					return new Tuple2<Integer, String>(i, s.substring(2));
+					SDNASequence sdnaSequence = new SDNASequence();
+					
+					// automatically configure credentials from ec2 instance
+					AmazonS3 s3Client = new AmazonS3Client(new InstanceProfileCredentialsProvider());
+					
+					// get input from s3 bucket
+			    	GetObjectRequest request = new GetObjectRequest
+			    			("smx.spark.bio.bucket", keyName);
+			    	
+			        S3Object object = s3Client.getObject(request); 
+			        sdnaSequence.setDNASequence(object.getObjectContent());
+
+					return new Tuple2<Partition, SDNASequence>
+						(new Partition(id, keyName), sdnaSequence);
 				})
-				.partitionBy(new CustomPartitioner(3,3));
-
-		
-//		rdd.foreach(line -> { 
-//			System.out.println(line);	
+				.partitionBy(new DNAPartitioner(count, count));
+	
+//		sequenceRDD.foreach(line -> { 
+//			logger.info(line._1().getId() + "," + line._1().getFileName());			
 //		});
+
+		logger.info("writing data to hdfs");
 		
-		rdd.foreachPartition(node -> { 
-    	
-			// TODO: port all alignment code
+		sequenceRDD.foreachPartition(record -> {
 			
-	        if (node.hasNext()){
-	        	
-	        	Tuple2<Integer, String> seqPair = node.next();
-	        	String[] files = seqPair._2().split(",");
-	        	String queryFileName = files[0];
-	        	//String targetFileName = files[1];
-	        	
-	        	//JavaRDD<String> queryRDD = ?textFile(queryFileName);
-	        	
+			if (record.hasNext()) {
+			
+				Tuple2<Partition, SDNASequence> partDNASeq = record.next();
 
-	        	////////////////////////////////////////////////////////////
-	        	try {
-
-	    			AmazonS3 s3Client = new AmazonS3Client(new InstanceProfileCredentialsProvider());
-	    	    	GetObjectRequest request = new GetObjectRequest("smx.spark.bio.bucket","input/aone.fna");
-	    	        S3Object object = s3Client.getObject(request);
-	    	        InputStream in = object.getObjectContent();	
-	        		
-	            	Map<String, DNASequence> linkedHashMap = 
-	            			FastaReaderHelper.readFastaDNASequence(in); //input
-	    	
-	        		List<DNASequence> list = 
-	        				new ArrayList<DNASequence>(linkedHashMap.values());
-	    	
-		        	//File file = new File(list.get(0).getAccession().toString());
-	        		File file = new File("test");
-		        	FastaWriterHelper.writeSequence(file, list.get(0));
-	        		
-	    			//File file = new File("output/"+dnaSeq.getAccession());
-	    			
-	    			//FastaWriterHelper.writeSequence(file, list.get(0));
-	        	} catch(Exception e) {
-	        		logger.info(e.getMessage());
-	        	}
-	        	////////////////////////////////////////////////////////////
-
-
-	        	//InputStream input = new ByteArrayInputStream(queryRDD.toString().getBytes());
-	        	
-	        	//File file = new File(queryFileName);
-	        	
-	        	//Map<String, DNASequence> linkedHashMap = 
-	        			//FastaReaderHelper.readFastaDNASequence(file); //input
-	        	
-	        	//List<DNASequence> list = 
-	        			//new ArrayList<DNASequence>(linkedHashMap.values());
-	        	
-	        	//File file = new File("output/"+dnaSeq.getAccession());
-	        	//FastaWriterHelper.writeSequence(file, list.get(0));
-	        	
-	        	//queryRDD.saveAsTextFile(queryFileName+"spark");
-	        }
-	        
+		    	Path path = new Path(partDNASeq._1().getFileName());
+		    	Configuration configuration = new Configuration();
+		    	FileSystem hdfs = path.getFileSystem(configuration);
+		    	if ( hdfs.exists( path )) { hdfs.delete( path, true ); } 
+		    	OutputStream os = hdfs.create(path, true);
+		    	BufferedWriter br = new BufferedWriter( new OutputStreamWriter( os, "UTF-8" ) );
+		    	br.write(partDNASeq._2().getDNASequence());
+		    	br.write(InetAddress.getLocalHost().getHostName());
+		    	br.close();
+		    	hdfs.close();
+			}
 		});
 		
-		logger.info("test complete");
-		
-//		JavaRDD<Tuple2<Integer, String>> sequencePairs = inputRDD.mapPartitionsWithIndex(
-//	            new Function2<Integer, Iterator<String>, Iterator<Tuple2<Integer, String>>>() {
-//
-//	                /**
-//					 * 
-//					 */
-//					private static final long serialVersionUID = 1L;
-//
-//					public Iterator<Tuple2<Integer, String>> call(Integer k, Iterator<String> v)
-//	                    throws Exception {
-//						
-//						List<Tuple2<Integer, String>> list = new ArrayList<Tuple2<Integer, String>>();
-//						while (v.hasNext())
-//							list.add(new Tuple2<Integer, String>(k, v.next()));
-//
-//						return list.iterator();
-//	                    //return new Iterator<Tuple2<Integer, String>>(partitionId, strings);
-//	                }
-//	            },
-//        true);
-	    
+		logger.info("terminar");
+
 	}
-}
-
-class CustomPartitioner extends Partitioner {
-
-	/**
-	 * 
-	 */
-	private static final long serialVersionUID = 1L;
-	Integer partitions;
-	Integer elements;
-	
-	public CustomPartitioner(Integer partitions, Integer elements) {
-		this.partitions = partitions;
-		this.elements = elements;
-	}
-	
-	@Override
-	public int getPartition(Object arg0) {
-		Integer k = (Integer)arg0;
-		return k * partitions / elements;
-	}
-
-	@Override
-	public int numPartitions() {
-		return partitions;
-	}
-	
-}
-
-// spark-nndescent/src/main/java/info/debatty/spark/nndescent/ExampleStringCosineSimilarity.java
-
-class MyIterator implements Iterator<Node> {
-
-    int i = 0;
-    private final Integer partitionId;
-    private final Iterator<String> strings;
-
-    public MyIterator(Integer partitionId, Iterator<String> strings) {
-        this.partitionId = partitionId;
-        this.strings = strings;
-    }
-
-    public boolean hasNext() {
-        return strings.hasNext();
-    }
-
-    public Node next() {
-        return new Node("" + partitionId + ":" + i++, strings.next());
-    }
-
-    public void remove() { 
-        strings.remove();
-    }
-}
-
-// java-graphs/src/main/java/info/debatty/java/graphs/Node.java
-/**
- * The nodes of a graph have an id (String) and a value (type T)
- * @author Thibault Debatty
- * @param <T> Type of value field
- */
-class Node<T> implements Serializable {
-    public String id = "";
-    public T value;
-    
-    public Node() {
-    }
-    
-    public Node(String id) {
-        this.id = id;
-    }
-    
-    public Node(String id, T value) {
-        this.id = id;
-        this.value = value;
-    }
-
-    @Override
-    public String toString() {
-        
-        String v = "";
-        if (this.value != null) {
-            v = this.value.toString();
-        }
-            
-        return "(" + id + " => " + v + ")";
-    }
-
-    @Override
-    public boolean equals(Object other) {
-        if (other == this) {
-            return true;
-        }
-        
-        if (other == null) {
-            return false;
-        }
-        
-        if (! other.getClass().isInstance(this)) {
-            return false;
-        }
-        
-        return this.id.equals(((Node) other).id);
-    }
-
-    @Override
-    public int hashCode() {
-        int hash = 5;
-        hash = 83 * hash + (this.id != null ? this.id.hashCode() : 0);
-        return hash;
-    }   
 }

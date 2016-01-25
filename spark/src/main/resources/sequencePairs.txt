@@ -1,3 +1,5 @@
-0,src/main/resources/atwo.fna,src/main/resources/aone.fna
-1,src/main/resources/athree.fna,src/main/resources/aone.fna
-2,src/main/resources/athree.fna,src/main/resources/atwo.fna
+0,input/aone.fna
+1,input/atwo.fna
+2,input/athree.fna
+3,input/afour.fna
+4,input/afive.fna

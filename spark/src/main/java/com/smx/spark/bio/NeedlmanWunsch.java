@@ -12,10 +12,13 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import javax.xml.crypto.dsig.Transform;
+
 import com.smx.spark.bio.part.Partition;
 import com.smx.spark.bio.part.DNAPartitioner;
 import com.smx.spark.bio.part.SDNASequence;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FileUtil;
@@ -40,11 +43,12 @@ import scala.Tuple2;
 
 public class NeedlmanWunsch {
 	
+	private final static String S3_BUCKET = "smx.spark.bio.bucket";
 	static Logger logger = Logger.getLogger(NeedlmanWunsch.class.getName());
 	
 	// program arguments: src/main/resources/sequencePairs.txt
 	public static void main(String[] args) {
-		
+		 
 		//WriteDNASequence.wholeTextFilesBug();
 		
 		try {
@@ -53,50 +57,34 @@ public class NeedlmanWunsch {
 			logger.info(e.getMessage());	
 		}
 		
-		// for deployment		
-		JavaSparkContext sc = new JavaSparkContext(new SparkConf()
-        	.setAppName("Bio Application"));
-		
-//		// for development
+//		// for deployment		
 //		JavaSparkContext sc = new JavaSparkContext(new SparkConf()
-//    		.setAppName("Bio Application")
-//        	.setMaster("local[1]"));
+//        	.setAppName("Bio Application"));
 		
-		//JavaRDD<String> inputRDD = sc.textFile("src/main/resources/sequencePairs.txt",3); // partition to number of seq pairs
-		//JavaRDD<String> inputRDD = sc.textFile(args[0]); // partition to number of seq pairs
+		// for development
+		JavaSparkContext sc = new JavaSparkContext(new SparkConf()
+    		.setAppName("Bio Application")
+        	.setMaster("local[1]"));
+		
 		JavaRDD<String> inputRDD = sc.textFile(args[0]);
 		
-		Integer count = new Integer((int)inputRDD.count());
-		
-		logger.info("loading data from S3 bucket");
-		
-		JavaPairRDD<Partition, SDNASequence> sequenceRDD = inputRDD
-				.mapToPair((line) ->  {
-					String[] tk = line.split(",");
-					Integer id = Integer.parseInt(tk[0]);
-					String keyName = tk[1]; 
-					
-					SDNASequence sdnaSequence = new SDNASequence();
-					
-					// automatically configure credentials from ec2 instance
-					AmazonS3 s3Client = new AmazonS3Client(new InstanceProfileCredentialsProvider());
-					
-					// get input from s3 bucket
-			    	GetObjectRequest request = new GetObjectRequest
-			    			("smx.spark.bio.bucket", keyName);
-			    	
-			        S3Object object = s3Client.getObject(request); 
-			        sdnaSequence.setDNASequence(object.getObjectContent());
+		JavaPairRDD<Partition, SDNASequence> 
+			sequenceRDD = transformToPartitionSDNASequence(inputRDD, true);
 
-					return new Tuple2<Partition, SDNASequence>
-						(new Partition(id, keyName), sdnaSequence);
-				})
-				.partitionBy(new DNAPartitioner(count, count));
+		sequenceRDD.foreach(line -> { 
+			logger.info(line._1().getId() + "," + line._1().getFileName());			
+		});
+		
+		//writeSDNASequenceToHdfs(sequenceRDD);
+	}
 	
-//		sequenceRDD.foreach(line -> { 
-//			logger.info(line._1().getId() + "," + line._1().getFileName());			
-//		});
-
+	/** Writes all dna sequences to hdfs 
+	 * 
+	 * @param sequenceRDD
+	 */
+	private static void writeSDNASequenceToHdfs
+		(JavaPairRDD<Partition, SDNASequence> sequenceRDD) {
+		
 		logger.info("writing data to hdfs");
 		
 		sequenceRDD.foreachPartition(record -> {
@@ -117,8 +105,67 @@ public class NeedlmanWunsch {
 		    	hdfs.close();
 			}
 		});
+	}
+	
+	/** Partition the input according to the id and keyName (S3 fileName)
+	 * 
+	 * @param inputRDD
+	 * @return
+	 */
+	private static JavaPairRDD<Partition, SDNASequence> 
+		transformToPartitionSDNASequence(JavaRDD<String> inputRDD) {
 		
-		logger.info("terminar");
+		logger.info("loading data from S3 bucket");
+		
+		Integer count = new Integer((int)inputRDD.count());
+		
+		return inputRDD.mapToPair((line) ->  {
+					String[] idAndKeyName = line.split(",");
+					Integer id = Integer.parseInt(idAndKeyName[0]);
+					String keyName = idAndKeyName[1]; 
+					
+					SDNASequence sdnaSequence = new SDNASequence();
+					
+					// automatically configure credentials from ec2 instance
+					AmazonS3 s3Client = new AmazonS3Client(new InstanceProfileCredentialsProvider());
+					
+					// get input from s3 bucket
+			    	GetObjectRequest request = new GetObjectRequest(S3_BUCKET, keyName);
+			    	
+			        S3Object object = s3Client.getObject(request); 
+			        sdnaSequence.setDNASequence(object.getObjectContent());
 
+					return new Tuple2<Partition, SDNASequence>
+						(new Partition(id, keyName), sdnaSequence);
+				})
+				.partitionBy(new DNAPartitioner(count, count));
+	}
+	
+	/** Partition the input according to the id and keyName (S3 fileName) "local fileSystem"
+ 	 * 
+	 * @param inputRDD
+	 * @param local
+	 * @return
+	 */
+	private static JavaPairRDD<Partition, SDNASequence> 
+		transformToPartitionSDNASequence(JavaRDD<String> inputRDD, Boolean local) {
+		
+		if (!local) return transformToPartitionSDNASequence(inputRDD);  
+		
+		Integer count = new Integer((int)inputRDD.count());
+		
+		return inputRDD.mapToPair((line) ->  {
+					String[] idAndKeyName = line.split(",");
+					Integer id = Integer.parseInt(idAndKeyName[0]);
+					String keyName = idAndKeyName[1]; 
+					
+					SDNASequence sdnaSequence = new SDNASequence();
+					File file = new File(keyName);					
+			        sdnaSequence.setDNASequence(FileUtils.openInputStream(file));
+
+					return new Tuple2<Partition, SDNASequence>
+						(new Partition(id, keyName), sdnaSequence);
+				})
+				.partitionBy(new DNAPartitioner(count, count));
 	}
 }

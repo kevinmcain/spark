@@ -62,6 +62,7 @@ public class SDNASequence implements Serializable {
 			throw new IOException(e.getMessage());
 		}
 
+		//http://www.javapractices.com/topic/TopicAction.do?Id=45
 		//http://stackoverflow.com/questions/12963445/serialization-readobject-writeobject-overides		
 		//        stream.writeObject(name);
 		//        stream.writeInt(id);
@@ -79,6 +80,7 @@ public class SDNASequence implements Serializable {
 			
 		this.sequence = (String) stream.readObject();
 		
+		//http://www.javapractices.com/topic/TopicAction.do?Id=45
 		//http://stackoverflow.com/questions/12963445/serialization-readobject-writeobject-overides    	
 		//        name = (String) stream.readObject();
 		//        id = stream.readInt();

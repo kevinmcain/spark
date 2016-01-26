@@ -2,44 +2,22 @@ package com.smx.spark.bio;
 
 import java.io.BufferedWriter;
 import java.io.File;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
-import java.io.Serializable;
 import java.net.InetAddress;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
 
-import com.google.common.base.Optional;
-
-
-import javax.xml.crypto.dsig.Transform;
-
-
-import com.smx.spark.bio.part.Partition;
 import com.smx.spark.bio.part.DNAPartitioner;
-import com.smx.spark.bio.part.PartitionComparator;
 import com.smx.spark.bio.part.SDNASequence;
-
 
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.util.Progressable;
 import org.apache.log4j.Logger;
 import org.apache.spark.api.java.*;
 import org.apache.spark.broadcast.Broadcast;
-import org.apache.spark.Partitioner;
 import org.apache.spark.SparkConf;
-import org.biojava.nbio.core.sequence.DNASequence;
-import org.biojava.nbio.core.sequence.io.FastaReaderHelper;
-import org.biojava.nbio.core.sequence.io.FastaWriterHelper;
-
 
 import com.amazonaws.auth.InstanceProfileCredentialsProvider;
 import com.amazonaws.services.s3.AmazonS3;
@@ -50,7 +28,6 @@ import com.amazonaws.services.s3.model.S3ObjectInputStream;
 
 
 import scala.Tuple2;
-import scala.runtime.Tuple2Zipped;
 
 public class NeedlmanWunsch {
 	

@@ -8,15 +8,22 @@ import java.io.OutputStreamWriter;
 import java.io.Serializable;
 import java.net.InetAddress;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import com.google.common.base.Optional;
+
+
 import javax.xml.crypto.dsig.Transform;
+
 
 import com.smx.spark.bio.part.Partition;
 import com.smx.spark.bio.part.DNAPartitioner;
+import com.smx.spark.bio.part.PartitionComparator;
 import com.smx.spark.bio.part.SDNASequence;
+
 
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -26,11 +33,13 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.util.Progressable;
 import org.apache.log4j.Logger;
 import org.apache.spark.api.java.*;
+import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.Partitioner;
 import org.apache.spark.SparkConf;
 import org.biojava.nbio.core.sequence.DNASequence;
 import org.biojava.nbio.core.sequence.io.FastaReaderHelper;
 import org.biojava.nbio.core.sequence.io.FastaWriterHelper;
+
 
 import com.amazonaws.auth.InstanceProfileCredentialsProvider;
 import com.amazonaws.services.s3.AmazonS3;
@@ -39,7 +48,9 @@ import com.amazonaws.services.s3.model.GetObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
 
+
 import scala.Tuple2;
+import scala.runtime.Tuple2Zipped;
 
 public class NeedlmanWunsch {
 	
@@ -68,22 +79,89 @@ public class NeedlmanWunsch {
 		
 		JavaRDD<String> inputRDD = sc.textFile(args[0]);
 		
-		JavaPairRDD<Partition, SDNASequence> 
+		Broadcast<Integer> count = sc.broadcast((int)(long)inputRDD.count());
+		
+		JavaPairRDD<Integer, SDNASequence> 
 			sequenceRDD = transformToPartitionSDNASequence(inputRDD, true);
+		
+//		sequenceRDD.foreach(line -> { 
+//			logger.info(line._1().getId() + ", " + line._1().getFileName() + ", " + line._2().getPartitionId());			
+//		});
+		
+//		JavaPairRDD<Tuple2<Integer, SDNASequence>, Tuple2<Partition, SDNASequence>> 
+//			alignedSequenceRDD = sequenceRDD.cartesian(sequenceRDD);
 
-		sequenceRDD.foreach(line -> { 
-			logger.info(line._1().getId() + "," + line._1().getFileName());			
+//		JavaPairRDD<Integer, Tuple2<SDNASequence, SDNASequence>>
+//			joinedRDD = sequenceRDD.join(sequenceRDD.sortByKey(new PartitionComparator(), false));
+
+		// When called on datasets of type (K, V) and (K, W), 
+		// returns a dataset of (K, (Iterable<V>, Iterable<W>)) tuples.
+
+				
+//		joinedRDD.foreach(seqPair -> { 
+//			logger.info(seqPair._1().getId() + " -> " + seqPair._2()._1().getPartitionId() 
+//					+ " and " + seqPair._2()._2().getPartitionId() );
+//		});
+		
+		JavaPairRDD<Integer, SDNASequence> groupRDD = sequenceRDD.mapToPair
+				(javaPairRDD -> { return new Tuple2<Integer, SDNASequence>
+				(((javaPairRDD._1()+1)%count.value()), javaPairRDD._2());
 		});
 		
+		JavaPairRDD<Integer,Tuple2<Iterable<SDNASequence>, Iterable<SDNASequence>>>
+			groupWithSeqRDD = sequenceRDD.groupWith(groupRDD);
+		
+		groupWithSeqRDD.foreach(seqGroup -> {
+		
+			Iterator<SDNASequence> itquery = seqGroup._2()._1().iterator();
+			
+			while (itquery.hasNext()) {
+	
+				SDNASequence sdnaSequenceQuery = itquery.next();
+				
+				Iterator<SDNASequence> ittarget = seqGroup._2()._2().iterator();
+				while (ittarget.hasNext()) {
+					SDNASequence sdnaSequenceTarget = ittarget.next();
+					
+					logger.info("partition " + seqGroup._1() + " -> ( " 
+							+ sdnaSequenceQuery.getPartitionId() + ", " 
+							+ sdnaSequenceTarget.getPartitionId());
+				}				
+			}
+		});
+		
+		
+		
+//		JavaPairRDD<Integer, Iterable<SDNASequence>>
+//			groupRDD = sequenceRDD.groupByKey();
+//		
+//		groupRDD.foreach(seq -> {
+//			
+//			Iterator<SDNASequence> iter = seq._2().iterator();
+//			
+//			while(iter.hasNext()) {
+//				SDNASequence sdnaSequence = iter.next();
+//				logger.info("partition " +seq._1() + "," + sdnaSequence.getPartitionId());
+//			}
+//		});
+		
+		
 		//writeSDNASequenceToHdfs(sequenceRDD);
+		
+
 	}
+	
+
+	
+//	"Any fool can write code that a computer can understand. Good programmers write code that humans can understand." --- Martin Fowler 
+//	Please correct my English.
 	
 	/** Writes all dna sequences to hdfs 
 	 * 
 	 * @param sequenceRDD
 	 */
 	private static void writeSDNASequenceToHdfs
-		(JavaPairRDD<Partition, SDNASequence> sequenceRDD) {
+		(JavaPairRDD<Integer, SDNASequence> sequenceRDD) {
 		
 		logger.info("writing data to hdfs");
 		
@@ -91,9 +169,9 @@ public class NeedlmanWunsch {
 			
 			if (record.hasNext()) {
 			
-				Tuple2<Partition, SDNASequence> partDNASeq = record.next();
+				Tuple2<Integer, SDNASequence> partDNASeq = record.next();
 
-		    	Path path = new Path(partDNASeq._1().getFileName());
+		    	Path path = new Path(partDNASeq._2().getFileName());
 		    	Configuration configuration = new Configuration();
 		    	FileSystem hdfs = path.getFileSystem(configuration);
 		    	if ( hdfs.exists( path )) { hdfs.delete( path, true ); } 
@@ -112,7 +190,7 @@ public class NeedlmanWunsch {
 	 * @param inputRDD
 	 * @return
 	 */
-	private static JavaPairRDD<Partition, SDNASequence> 
+	private static JavaPairRDD<Integer, SDNASequence> 
 		transformToPartitionSDNASequence(JavaRDD<String> inputRDD) {
 		
 		logger.info("loading data from S3 bucket");
@@ -134,9 +212,10 @@ public class NeedlmanWunsch {
 			    	
 			        S3Object object = s3Client.getObject(request); 
 			        sdnaSequence.setDNASequence(object.getObjectContent());
+			        sdnaSequence.setPartitionId(id);
+			        sdnaSequence.setFileName(keyName);
 
-					return new Tuple2<Partition, SDNASequence>
-						(new Partition(id, keyName), sdnaSequence);
+					return new Tuple2<Integer, SDNASequence>(id, sdnaSequence);
 				})
 				.partitionBy(new DNAPartitioner(count, count));
 	}
@@ -147,7 +226,7 @@ public class NeedlmanWunsch {
 	 * @param local
 	 * @return
 	 */
-	private static JavaPairRDD<Partition, SDNASequence> 
+	private static JavaPairRDD<Integer, SDNASequence> 
 		transformToPartitionSDNASequence(JavaRDD<String> inputRDD, Boolean local) {
 		
 		if (!local) return transformToPartitionSDNASequence(inputRDD);  
@@ -162,9 +241,10 @@ public class NeedlmanWunsch {
 					SDNASequence sdnaSequence = new SDNASequence();
 					File file = new File(keyName);					
 			        sdnaSequence.setDNASequence(FileUtils.openInputStream(file));
-
-					return new Tuple2<Partition, SDNASequence>
-						(new Partition(id, keyName), sdnaSequence);
+			        sdnaSequence.setPartitionId(id);
+			        sdnaSequence.setFileName(keyName);
+			        
+					return new Tuple2<Integer, SDNASequence>(id, sdnaSequence);
 				})
 				.partitionBy(new DNAPartitioner(count, count));
 	}

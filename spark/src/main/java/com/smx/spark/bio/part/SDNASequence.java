@@ -21,6 +21,8 @@ public class SDNASequence implements Serializable {
 
 	private transient DNASequence dnaSequence;
 	private String sequence = "";
+	private Integer partitionId;
+	private String fileName = "";
 	
 	/**
 	 * 
@@ -46,7 +48,23 @@ public class SDNASequence implements Serializable {
 	public String getDNASequence() {
 		return this.sequence;
 	}
+	
+	public Integer getPartitionId() {
+		return this.partitionId;
+	}
 
+	public void setPartitionId(Integer partitionId) {
+		this.partitionId = partitionId;
+	}
+	
+	public String getFileName() {
+		return this.fileName;
+	}
+	
+	public void setFileName(String fileName) {
+		this.fileName = fileName;
+	}
+	
 	/**
 	 * 
 	 * @param stream
@@ -56,6 +74,8 @@ public class SDNASequence implements Serializable {
             throws IOException {
 		
 		try {
+			stream.writeObject(this.sequence);
+			stream.writeObject(this.partitionId);
 			stream.writeObject(this.sequence);
 			//FastaWriterHelper.writeSequence(stream, this.dnaSequence);
 		} catch (Exception e) {
@@ -79,6 +99,8 @@ public class SDNASequence implements Serializable {
             throws IOException, ClassNotFoundException {
 			
 		this.sequence = (String) stream.readObject();
+		this.partitionId = (Integer)stream.readObject();
+		this.fileName = (String) stream.readObject();
 		
 		//http://www.javapractices.com/topic/TopicAction.do?Id=45
 		//http://stackoverflow.com/questions/12963445/serialization-readobject-writeobject-overides    	

@@ -18,7 +18,7 @@ public class DNAPartitioner extends Partitioner {
 	
 	@Override
 	public int getPartition(Object arg0) {
-		Integer k = ((Partition)arg0).getId();
+		Integer k = (Integer)arg0;
 		return k * partitions / elements;
 	}
 

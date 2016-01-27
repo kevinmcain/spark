@@ -6,7 +6,7 @@ import org.apache.spark.SparkConf
 
 import scala.io.Source
 
-object NeedlemanWunsch {
+object Aligner {
     def main(args: Array[String]) {
     //val logFile = "YOUR_SPARK_HOME/README.md" // Should be some file on your system
 

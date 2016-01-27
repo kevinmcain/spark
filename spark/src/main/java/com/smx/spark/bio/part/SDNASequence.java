@@ -20,6 +20,15 @@ import org.biojava.nbio.core.sequence.io.FastaWriterHelper;
 public class SDNASequence implements Serializable {
 
 	private transient DNASequence dnaSequence;
+	
+	public DNASequence getDnaSequence() {
+		return dnaSequence;
+	}
+
+	public void setDnaSequence(DNASequence dnaSequence) {
+		this.dnaSequence = dnaSequence;
+	}
+
 	private String sequence = "";
 	private Integer partitionId;
 	private String fileName = "";
@@ -33,7 +42,7 @@ public class SDNASequence implements Serializable {
 		//this.dnaSequence = null;
 	}
 	
-	public void setDNASequence(java.io.InputStream stream) throws IOException {
+	public void setSequence(java.io.InputStream stream) throws IOException {
 
     	Map<String, DNASequence> linkedHashMap = 
     			FastaReaderHelper.readFastaDNASequence(stream);
@@ -45,7 +54,7 @@ public class SDNASequence implements Serializable {
 		this.sequence = dnaSequence.toString() + " writing host " + InetAddress.getLocalHost().getHostName();
 	}
 	
-	public String getDNASequence() {
+	public String getSequence() {
 		return this.sequence;
 	}
 	

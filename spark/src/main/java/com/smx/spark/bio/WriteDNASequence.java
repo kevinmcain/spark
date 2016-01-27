@@ -35,7 +35,7 @@ import com.amazonaws.services.s3.model.S3Object;
 
 public class WriteDNASequence {
 	
-	static Logger logger = Logger.getLogger(NeedlmanWunsch.class.getName());
+	static Logger logger = Logger.getLogger(MultipleSequenceAligner.class.getName());
 	
 	public WriteDNASequence() {
 		writeDNASequence();

@@ -34,6 +34,11 @@
 			<artifactId>aws-java-sdk</artifactId>
 			<version>1.10.48</version>
 		</dependency>
+		<dependency>
+			<groupId>org.biojava</groupId>
+			<artifactId>biojava-alignment</artifactId>
+			<version>4.1.0</version>
+		</dependency>
 	</dependencies>
 	
 	

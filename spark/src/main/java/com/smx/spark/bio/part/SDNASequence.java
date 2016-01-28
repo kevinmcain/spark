@@ -9,40 +9,58 @@ import java.util.Map;
 import java.util.Set;
 
 import org.biojava.nbio.core.sequence.DNASequence;
+import org.biojava.nbio.core.sequence.compound.NucleotideCompound;
 import org.biojava.nbio.core.sequence.io.FastaReaderHelper;
 import org.biojava.nbio.core.sequence.io.FastaWriterHelper;
+import org.biojava.nbio.core.sequence.storage.ArrayListSequenceReader;
+import org.biojava.nbio.core.sequence.template.SequenceReader;
 
-/** Proxy class for DNASequence implements Serializable
+/** Proxy class for DNASequence implements Serializable.
  * 
  * @author kevin
+ * 
+ *  http://www.javapractices.com/topic/TopicAction.do?Id=45
+ *	http://stackoverflow.com/questions/12963445/serialization-readobject-writeobject-overides
  *
  */
 public class SDNASequence implements Serializable {
 
-	private transient DNASequence dnaSequence;
-	
-	public DNASequence getDnaSequence() {
-		return dnaSequence;
-	}
-
-	public void setDnaSequence(DNASequence dnaSequence) {
-		this.dnaSequence = dnaSequence;
-	}
-
-	private String sequence = "";
-	private Integer partitionId;
-	private String fileName = "";
-	
 	/**
 	 * 
 	 */
 	private static final long serialVersionUID = 2814589781198243348L;
 	
+	private transient DNASequence dnaSequence;
+	// DNASequence is an AbstractSequence which has a sequenceStorage member 
+	// that is a SequenceReader<C> which is instantiated as ArrayListSequenceReader
+	private transient ArrayListSequenceReader<NucleotideCompound> proxyLoader; //sequenceStorage;
+
+	// This is a member of ArrayListSequenceReader
+	private List<NucleotideCompound> parsedCompounds;
+	private Integer partitionId;
+	private String fileName = "";
+	
 	public SDNASequence() {
 		//this.dnaSequence = null;
 	}
 	
-	public void setSequence(java.io.InputStream stream) throws IOException {
+	public DNASequence getDNASequence() {
+		if (dnaSequence == null){
+			proxyLoader = new ArrayListSequenceReader<NucleotideCompound>();
+			proxyLoader.setContents(parsedCompounds);
+			dnaSequence = new DNASequence(proxyLoader);
+		}
+			
+		return dnaSequence;
+	}
+
+	private void setDNASequence(DNASequence dnaSequence) {
+		this.dnaSequence = dnaSequence;
+		this.proxyLoader = (ArrayListSequenceReader<NucleotideCompound>)dnaSequence.getProxySequenceReader();
+		this.parsedCompounds = proxyLoader.getAsList(); 
+	}
+
+	public void setSDNASequence(java.io.InputStream stream) throws IOException {
 
     	Map<String, DNASequence> linkedHashMap = 
     			FastaReaderHelper.readFastaDNASequence(stream);
@@ -50,12 +68,8 @@ public class SDNASequence implements Serializable {
 		List<DNASequence> list = 
 				new ArrayList<DNASequence>(linkedHashMap.values());
 		
-		this.dnaSequence = list.get(0);
-		this.sequence = dnaSequence.toString() + " writing host " + InetAddress.getLocalHost().getHostName();
-	}
-	
-	public String getSequence() {
-		return this.sequence;
+		// Attach writing host for diagnostics -> InetAddress.getLocalHost().getHostName();
+		this.setDNASequence(list.get(0));
 	}
 	
 	public Integer getPartitionId() {
@@ -83,22 +97,16 @@ public class SDNASequence implements Serializable {
             throws IOException {
 		
 		try {
-			stream.writeObject(this.sequence);
 			stream.writeObject(this.partitionId);
-			stream.writeObject(this.sequence);
-			//FastaWriterHelper.writeSequence(stream, this.dnaSequence);
+			stream.writeObject(this.fileName);
+			//stream.writeObject(this.parsedCompounds.toString());
+			FastaWriterHelper.writeSequence(stream, this.dnaSequence);
 		} catch (Exception e) {
 			throw new IOException(e.getMessage());
 		}
-
-		//http://www.javapractices.com/topic/TopicAction.do?Id=45
-		//http://stackoverflow.com/questions/12963445/serialization-readobject-writeobject-overides		
-		//        stream.writeObject(name);
-		//        stream.writeInt(id);
-		//        stream.writeObject(DOB);
     }
 	
-	/**
+	/** https://docs.oracle.com/javase/7/docs/api/java/io/ObjectInputStream.html
 	 * 
 	 * @param stream
 	 * @throws IOException
@@ -106,15 +114,10 @@ public class SDNASequence implements Serializable {
 	 */
 	private void readObject(java.io.ObjectInputStream stream)
             throws IOException, ClassNotFoundException {
-			
-		this.sequence = (String) stream.readObject();
+
 		this.partitionId = (Integer)stream.readObject();
 		this.fileName = (String) stream.readObject();
-		
-		//http://www.javapractices.com/topic/TopicAction.do?Id=45
-		//http://stackoverflow.com/questions/12963445/serialization-readobject-writeobject-overides    	
-		//        name = (String) stream.readObject();
-		//        id = stream.readInt();
-		//        DOB = (String) stream.readObject();
+		// the final part of the stream is a fasta file input stream
+		this.setSDNASequence(stream);
     }
 }

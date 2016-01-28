@@ -74,26 +74,11 @@ public class MultipleSequenceAligner {
 		Broadcast<Integer> count = sc.broadcast((int)(long)inputRDD.count());
 		
 		JavaPairRDD<Integer, SDNASequence> 
-			sequenceRDD = transformToPartitionSDNASequence(inputRDD, true);
+			sequenceRDD = transformToPartitionSDNASequence(inputRDD, true); // <-- local = true 
+
 		
-//		sequenceRDD.foreach(line -> { 
-//			logger.info(line._1().getId() + ", " + line._1().getFileName() + ", " + line._2().getPartitionId());			
-//		});
+		//writeSDNASequenceToHdfs(sequenceRDD);
 		
-//		JavaPairRDD<Tuple2<Integer, SDNASequence>, Tuple2<Partition, SDNASequence>> 
-//			alignedSequenceRDD = sequenceRDD.cartesian(sequenceRDD);
-
-//		JavaPairRDD<Integer, Tuple2<SDNASequence, SDNASequence>>
-//			joinedRDD = sequenceRDD.join(sequenceRDD.sortByKey(new PartitionComparator(), false));
-
-		// When called on datasets of type (K, V) and (K, W), 
-		// returns a dataset of (K, (Iterable<V>, Iterable<W>)) tuples.
-
-				
-//		joinedRDD.foreach(seqPair -> { 
-//			logger.info(seqPair._1().getId() + " -> " + seqPair._2()._1().getPartitionId() 
-//					+ " and " + seqPair._2()._2().getPartitionId() );
-//		});
 		
 		JavaPairRDD<Integer, SDNASequence> groupRDD = sequenceRDD.mapToPair
 				(javaPairRDD -> { return new Tuple2<Integer, SDNASequence>
@@ -124,18 +109,18 @@ public class MultipleSequenceAligner {
 						SDNASequence sdnaSequenceTarget = ittarget.next();
 						
 
-//						GapPenalty gapPenalty = new SimpleGapPenalty();
-//						SubstitutionMatrix<NucleotideCompound> subMatrix = SubstitutionMatrixHelper.getNuc4_4();
-//						
-//						PairwiseSequenceScorer<DNASequence, NucleotideCompound> pairwiseScorer = 
-//								new FractionalIdentityScorer<DNASequence, NucleotideCompound>(new 
-//								NeedlemanWunsch<DNASequence, NucleotideCompound>(
-//										sdnaSequenceQuery.getDnaSequence(), 
-//										sdnaSequenceTarget.getDnaSequence(), 
-//										gapPenalty, 
-//										subMatrix));
-//						
-//						double score = pairwiseScorer.getScore();
+						GapPenalty gapPenalty = new SimpleGapPenalty();
+						SubstitutionMatrix<NucleotideCompound> subMatrix = SubstitutionMatrixHelper.getNuc4_4();
+						
+						PairwiseSequenceScorer<DNASequence, NucleotideCompound> pairwiseScorer = 
+								new FractionalIdentityScorer<DNASequence, NucleotideCompound>(new 
+								NeedlemanWunsch<DNASequence, NucleotideCompound>(
+										sdnaSequenceQuery.getDNASequence(), 
+										sdnaSequenceTarget.getDNASequence(), 
+										gapPenalty, 
+										subMatrix));
+						
+						double score = pairwiseScorer.getScore();
 						
 						logger.info("pairwise alignment " + partition.toString() + " -> ( " 
 								+ sdnaSequenceQuery.getPartitionId() + ", " 
@@ -145,27 +130,9 @@ public class MultipleSequenceAligner {
 			}
 		});
 		
-		
-		
-//		JavaPairRDD<Integer, Iterable<SDNASequence>>
-//			groupRDD = sequenceRDD.groupByKey();
-//		
-//		groupRDD.foreach(seq -> {
-//			
-//			Iterator<SDNASequence> iter = seq._2().iterator();
-//			
-//			while(iter.hasNext()) {
-//				SDNASequence sdnaSequence = iter.next();
-//				logger.info("partition " +seq._1() + "," + sdnaSequence.getPartitionId());
-//			}
-//		});
-		
-		
-		//writeSDNASequenceToHdfs(sequenceRDD);
 	}
 	
 
-	
 //	"Any fool can write code that a computer can understand. Good programmers write code that humans can understand." --- Martin Fowler 
 //	Please correct my English.
 	
@@ -190,7 +157,7 @@ public class MultipleSequenceAligner {
 		    	if ( hdfs.exists( path )) { hdfs.delete( path, true ); } 
 		    	OutputStream os = hdfs.create(path, true);
 		    	BufferedWriter br = new BufferedWriter( new OutputStreamWriter( os, "UTF-8" ) );
-		    	br.write(partDNASeq._2().getSequence());
+		    	br.write(partDNASeq._2().getDNASequence().getSequenceAsString());
 		    	br.write(InetAddress.getLocalHost().getHostName());
 		    	br.close();
 		    	hdfs.close();
@@ -224,7 +191,7 @@ public class MultipleSequenceAligner {
 			    	GetObjectRequest request = new GetObjectRequest(S3_BUCKET, keyName);
 			    	
 			        S3Object object = s3Client.getObject(request); 
-			        sdnaSequence.setSequence(object.getObjectContent());
+			        sdnaSequence.setSDNASequence(object.getObjectContent());
 			        sdnaSequence.setPartitionId(id);
 			        sdnaSequence.setFileName(keyName);
 
@@ -253,7 +220,7 @@ public class MultipleSequenceAligner {
 					
 					SDNASequence sdnaSequence = new SDNASequence();
 					File file = new File(keyName);					
-			        sdnaSequence.setSequence(FileUtils.openInputStream(file));
+			        sdnaSequence.setSDNASequence(FileUtils.openInputStream(file));
 			        sdnaSequence.setPartitionId(id);
 			        sdnaSequence.setFileName(keyName);
 			        
@@ -287,8 +254,8 @@ public class MultipleSequenceAligner {
 					PairwiseSequenceScorer<DNASequence, NucleotideCompound> pairwiseScorer = 
 							new FractionalIdentityScorer<DNASequence, NucleotideCompound>(new 
 							NeedlemanWunsch<DNASequence, NucleotideCompound>(
-									sdnaSequenceQuery.getDnaSequence(), 
-									sdnaSequenceTarget.getDnaSequence(), 
+									sdnaSequenceQuery.getDNASequence(), 
+									sdnaSequenceTarget.getDNASequence(), 
 									gapPenalty, 
 									subMatrix));
 					

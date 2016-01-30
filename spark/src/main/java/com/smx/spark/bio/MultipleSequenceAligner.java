@@ -85,48 +85,35 @@ public class MultipleSequenceAligner {
 				(((javaPairRDD._1()+1)%count.value()), javaPairRDD._2());
 		});
 		
-		JavaPairRDD<Integer,Tuple2<Iterable<SDNASequence>, Iterable<SDNASequence>>>
-			groupWithSeqRDD = sequenceRDD.groupWith(groupRDD);
+		JavaPairRDD<Tuple2<Integer, SDNASequence>, Tuple2<Integer, SDNASequence>>
+			catesianProductRDD = sequenceRDD.cartesian(sequenceRDD);
 		
 		
 		//TODO: whats the difference between foreach and foreachPartition?
-		groupWithSeqRDD.foreachPartition(seqGroup -> {
-		
-			while (seqGroup.hasNext()) {
+		catesianProductRDD.foreachPartition(joinedSeq -> {
+			
+			while (joinedSeq.hasNext()) {
 				
-				Tuple2<Integer,Tuple2<Iterable<SDNASequence>, Iterable<SDNASequence>>> tuple2 = seqGroup.next();
-				Integer partition = tuple2._1();
+				Tuple2<Tuple2<Integer, SDNASequence>, Tuple2<Integer, SDNASequence>> sequencePair = joinedSeq.next();
 				
-				Tuple2<Iterable<SDNASequence>, Iterable<SDNASequence>> sequencePair = tuple2._2();
-				Iterator<SDNASequence> itquery = sequencePair._1().iterator();
+				Tuple2<Integer, SDNASequence> tupleQuery = sequencePair._1();
+				Tuple2<Integer, SDNASequence> tupleTarget = sequencePair._2();
 				
-				while (itquery.hasNext()) {
-		
-					SDNASequence sdnaSequenceQuery = itquery.next();
-					
-					Iterator<SDNASequence> ittarget = sequencePair._2().iterator();
-					while (ittarget.hasNext()) {
-						SDNASequence sdnaSequenceTarget = ittarget.next();
-						
-
+				
 						GapPenalty gapPenalty = new SimpleGapPenalty();
 						SubstitutionMatrix<NucleotideCompound> subMatrix = SubstitutionMatrixHelper.getNuc4_4();
 						
 						PairwiseSequenceScorer<DNASequence, NucleotideCompound> pairwiseScorer = 
 								new FractionalIdentityScorer<DNASequence, NucleotideCompound>(new 
 								NeedlemanWunsch<DNASequence, NucleotideCompound>(
-										sdnaSequenceQuery.getDNASequence(), 
-										sdnaSequenceTarget.getDNASequence(), 
+										tupleQuery._2().getDNASequence(), 
+										tupleTarget._2().getDNASequence(), 
 										gapPenalty, 
 										subMatrix));
 						
 						double score = pairwiseScorer.getScore();
 						
-						logger.info("pairwise alignment " + partition.toString() + " -> ( " 
-								+ sdnaSequenceQuery.getPartitionId() + ", " 
-								+ sdnaSequenceTarget.getPartitionId() + ")");
-					}				
-				}
+						logger.info("pairwise alignment ( " + tupleQuery._1() + ", "  + tupleTarget._1() + ")");
 			}
 		});
 		

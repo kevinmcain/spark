@@ -42,7 +42,9 @@ import com.amazonaws.services.s3.model.S3ObjectInputStream;
 
 
 
+
 import scala.Tuple2;
+import scala.tools.nsc.settings.AdvancedScalaSettings.X;
 
 public class MultipleSequenceAligner {
 	
@@ -79,18 +81,12 @@ public class MultipleSequenceAligner {
 		
 		//writeSDNASequenceToHdfs(sequenceRDD);
 		
-		
-		JavaPairRDD<Integer, SDNASequence> groupRDD = sequenceRDD.mapToPair
-				(javaPairRDD -> { return new Tuple2<Integer, SDNASequence>
-				(((javaPairRDD._1()+1)%count.value()), javaPairRDD._2());
-		});
-		
-		JavaPairRDD<Tuple2<Integer, SDNASequence>, Tuple2<Integer, SDNASequence>>
-			catesianProductRDD = sequenceRDD.cartesian(sequenceRDD);
-		
+		// filter removes duplicates, get approx half of cartesian table, i.e., 10 of 5*5
+		JavaPairRDD<Tuple2<Integer, SDNASequence>, Tuple2<Integer, SDNASequence>> pairs = 
+				sequenceRDD.cartesian(sequenceRDD).filter(x -> { return x._1()._1() > x._2()._1();});
 		
 		//TODO: whats the difference between foreach and foreachPartition?
-		catesianProductRDD.foreachPartition(joinedSeq -> {
+		pairs.foreachPartition(joinedSeq -> {
 			
 			while (joinedSeq.hasNext()) {
 				

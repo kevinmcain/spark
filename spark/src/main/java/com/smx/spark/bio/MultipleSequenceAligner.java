@@ -5,16 +5,20 @@ import java.io.File;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.net.InetAddress;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import com.smx.spark.bio.part.DNAPartitioner;
 import com.smx.spark.bio.part.SDNASequence;
 import com.smx.spark.bio.part.SPairwiseSequenceScorer;
 
+import org.biojava.nbio.core.sequence.AccessionID;
 import org.biojava.nbio.core.sequence.DNASequence;
 import org.biojava.nbio.core.sequence.compound.NucleotideCompound;
 import org.biojava.nbio.alignment.FractionalIdentityScorer;
+import org.biojava.nbio.alignment.GuideTree;
 import org.biojava.nbio.alignment.NeedlemanWunsch;
 import org.biojava.nbio.alignment.SimpleGapPenalty;
 import org.biojava.nbio.alignment.SubstitutionMatrixHelper;
@@ -22,6 +26,7 @@ import org.biojava.nbio.alignment.template.GapPenalty;
 import org.biojava.nbio.alignment.template.PairwiseSequenceScorer;
 import org.biojava.nbio.alignment.template.Profile;
 import org.biojava.nbio.alignment.template.SubstitutionMatrix;
+import org.forester.phylogeny.data.Accession;
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
@@ -37,6 +42,12 @@ import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.model.GetObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
+
+
+
+
+
+
 
 
 
@@ -139,6 +150,8 @@ public class MultipleSequenceAligner {
 			
 			Tuple2<Integer, SDNASequence> tupleQuery = pair._1();
 			Tuple2<Integer, SDNASequence> tupleTarget = pair._2();
+			
+			logger.info("pairwise alignment (" + tupleQuery._1() + ", "  + tupleTarget._1() + ")");
 
 			GapPenalty gapPenalty = new SimpleGapPenalty();
 			SubstitutionMatrix<NucleotideCompound> subMatrix = SubstitutionMatrixHelper.getNuc4_4();
@@ -151,24 +164,40 @@ public class MultipleSequenceAligner {
 					subMatrix);
 			
 			Tuple2<Tuple2<Integer, Integer>, SPairwiseSequenceScorer> 
-				scorerSequence = new Tuple2<Tuple2<Integer, Integer>, SPairwiseSequenceScorer>
-					(new Tuple2<Integer, Integer>(tupleQuery._1() ,tupleTarget._1()), new SPairwiseSequenceScorer(needlemanWunsch));
-			
-			logger.info("pairwise alignment (" + tupleQuery._1() + ", "  + tupleTarget._1() + ")");
-			
+			scorerSequence = new Tuple2<Tuple2<Integer, Integer>, SPairwiseSequenceScorer>
+				(new Tuple2<Integer, Integer>(tupleQuery._1() ,tupleTarget._1()), new SPairwiseSequenceScorer(needlemanWunsch));
+
 			return scorerSequence;
-			
 		});
 		
 		
 		// stage 2: hierarchical clustering into a guide tree
 		
 		//       a:
-		List<Tuple2<Tuple2<Integer, Integer>, Double>> distances = scorersRDD.mapToPair(scorerSequence -> {
-			return new Tuple2<Tuple2<Integer, Integer>, Double>(new Tuple2<Integer, Integer>
-			(scorerSequence._1()._1(), scorerSequence._1()._2()), scorerSequence._2().getDistance());
+		List<Tuple2<Tuple2<Integer, Integer>, SPairwiseSequenceScorer>> distances = scorersRDD.mapToPair(scorerSequence -> {
+			return new Tuple2<Tuple2<Integer, Integer>, SPairwiseSequenceScorer>(new Tuple2<Integer, Integer>
+			(scorerSequence._1()._1(), scorerSequence._1()._2()), scorerSequence._2());
 		}).collect();
 		
+		// get all sequence input strings as list of string
+		 List<String> accessionIds = sequenceRDD.map(sdnaSequence -> {
+			 return sdnaSequence._2().getDNASequence().getAccession().getID();
+		 }).collect();
+		 
+		// Need List of DNASequence that have all but actual sequence data
+		List<DNASequence> sequences = accessionIds.stream().map( id -> {
+			DNASequence dnaSequence = new DNASequence();
+			dnaSequence.setAccession(new AccessionID(id));
+			return dnaSequence;
+		}).collect(Collectors.toList());
+		
+		List<SPairwiseSequenceScorer> scorers = distances.stream().map(dist -> {
+			return dist._2();
+		}).collect(Collectors.toList());
+		
+		
+		@SuppressWarnings("rawtypes")
+		GuideTree<DNASequence, NucleotideCompound> tree = new GuideTree(sequences, scorers);
 		
 		
 		//       b:

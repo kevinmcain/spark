@@ -13,7 +13,8 @@ import org.biojava.nbio.core.sequence.compound.NucleotideCompound;
 import org.biojava.nbio.core.sequence.io.FastaWriterHelper;
 import org.biojava.nbio.core.sequence.template.Sequence;
 
-/** Serializable PairwiseSequenceScorer
+/** Serializable PairwiseSequenceScorer, 
+ * 		contains only that which is needed for multiple sequence alignment
  * 
  * @author kevin
  *
@@ -27,8 +28,8 @@ public class SPairwiseSequenceScorer
 	private static final long serialVersionUID = -3355314671342154292L;
 	
 	//private transient Profile<DNASequence, NucleotideCompound> profile;
+	//private SDNASequence query, target;
 	
-	private SDNASequence query, target;
 	private double distance;
 	private double maxScore;
 	private double minScore;
@@ -38,16 +39,17 @@ public class SPairwiseSequenceScorer
 	public SPairwiseSequenceScorer() { }
 	
 	public SPairwiseSequenceScorer(NeedlemanWunsch<DNASequence, NucleotideCompound> needlemanWunsch) {
-		query = new SDNASequence();
-		query.setDNASequence(needlemanWunsch.getQuery());
-		target = new SDNASequence();
-		target.setDNASequence(needlemanWunsch.getTarget());
+		//query = new SDNASequence();
+		//query.setDNASequence(needlemanWunsch.getQuery());
+		//target = new SDNASequence();
+		//target.setDNASequence(needlemanWunsch.getTarget());
+		//profile = needlemanWunsch.getProfile();
+		
 		distance = needlemanWunsch.getDistance();
 		maxScore = needlemanWunsch.getMaxScore();
 		minScore = needlemanWunsch.getMinScore();
 		score = needlemanWunsch.getScore();
 		similarity = needlemanWunsch.getSimilarity();
-		//profile = needlemanWunsch.getProfile();
 	}
 
 	@Override
@@ -87,12 +89,12 @@ public class SPairwiseSequenceScorer
 
 	@Override
 	public DNASequence getQuery() {
-		return query.getDNASequence();
+		return null; //query.getDNASequence();
 	}
 
 	@Override
 	public DNASequence getTarget() {
-		return target.getDNASequence();
+		return null; //target.getDNASequence();
 	}
 	
 	/**
@@ -104,13 +106,13 @@ public class SPairwiseSequenceScorer
             throws IOException {
 		
 		try {
-			stream.writeObject(this.query);
-			stream.writeObject(this.target);
-			stream.writeObject(this.distance);
-			stream.writeObject(this.maxScore);
-			stream.writeObject(this.minScore);
-			stream.writeObject(this.score);
-			stream.writeObject(this.similarity);
+			//stream.writeObject(this.query);
+			//stream.writeObject(this.target);
+			stream.writeDouble(this.distance);
+			stream.writeDouble(this.maxScore);
+			stream.writeDouble(this.minScore);
+			stream.writeDouble(this.score);
+			stream.writeDouble(this.similarity);
 		} catch (Exception e) {
 			throw new IOException(e.getMessage());
 		}
@@ -125,8 +127,8 @@ public class SPairwiseSequenceScorer
 	private void readObject(java.io.ObjectInputStream stream)
             throws IOException, ClassNotFoundException {
 		
-		this.query = (SDNASequence)stream.readObject();
-		this.target = (SDNASequence)stream.readObject();
+		//this.query = (SDNASequence)stream.readObject();
+		//this.target = (SDNASequence)stream.readObject();
 		this.distance = (double) stream.readDouble();
 		this.maxScore = (double) stream.readDouble();
 		this.minScore = (double) stream.readDouble();

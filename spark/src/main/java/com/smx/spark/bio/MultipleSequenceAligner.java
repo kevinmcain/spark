@@ -6,9 +6,11 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.net.InetAddress;
 import java.util.Iterator;
+import java.util.List;
 
 import com.smx.spark.bio.part.DNAPartitioner;
 import com.smx.spark.bio.part.SDNASequence;
+import com.smx.spark.bio.part.SPairwiseSequenceScorer;
 
 import org.biojava.nbio.core.sequence.DNASequence;
 import org.biojava.nbio.core.sequence.compound.NucleotideCompound;
@@ -18,6 +20,7 @@ import org.biojava.nbio.alignment.SimpleGapPenalty;
 import org.biojava.nbio.alignment.SubstitutionMatrixHelper;
 import org.biojava.nbio.alignment.template.GapPenalty;
 import org.biojava.nbio.alignment.template.PairwiseSequenceScorer;
+import org.biojava.nbio.alignment.template.Profile;
 import org.biojava.nbio.alignment.template.SubstitutionMatrix;
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -34,6 +37,11 @@ import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.model.GetObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
+
+
+
+
+
 
 
 
@@ -85,33 +93,91 @@ public class MultipleSequenceAligner {
 		JavaPairRDD<Tuple2<Integer, SDNASequence>, Tuple2<Integer, SDNASequence>> pairs = 
 				sequenceRDD.cartesian(sequenceRDD).filter(x -> { return x._1()._1() > x._2()._1();});
 		
+		// stage 1: pairwise similarity calculation
 		//TODO: whats the difference between foreach and foreachPartition?
-		pairs.foreachPartition(joinedSeq -> {
+//		pairs.foreachPartition(joinedSeq -> {
+//			
+//			while (joinedSeq.hasNext()) {
+//				
+//				Tuple2<Tuple2<Integer, SDNASequence>, Tuple2<Integer, SDNASequence>> sequencePair = joinedSeq.next();
+//				
+//				Tuple2<Integer, SDNASequence> tupleQuery = sequencePair._1();
+//				Tuple2<Integer, SDNASequence> tupleTarget = sequencePair._2();
+//				
+//				
+//						GapPenalty gapPenalty = new SimpleGapPenalty();
+//						SubstitutionMatrix<NucleotideCompound> subMatrix = SubstitutionMatrixHelper.getNuc4_4();
+//						
+////						PairwiseSequenceScorer<DNASequence, NucleotideCompound> pairwiseScorer = 
+////								new FractionalIdentityScorer<DNASequence, NucleotideCompound>(new 
+////								NeedlemanWunsch<DNASequence, NucleotideCompound>(
+////										tupleQuery._2().getDNASequence(), 
+////										tupleTarget._2().getDNASequence(), 
+////										gapPenalty, 
+////										subMatrix));
+////						
+////						double score = pairwiseScorer.getScore();
+//						
+//						
+//						NeedlemanWunsch<DNASequence, NucleotideCompound> nw = 
+//								new NeedlemanWunsch<DNASequence, NucleotideCompound>(
+//								tupleQuery._2().getDNASequence(), 
+//								tupleTarget._2().getDNASequence(), 
+//								gapPenalty, 
+//								subMatrix);
+//						
+//						nw.getScore();
+//
+//						Profile<DNASequence, NucleotideCompound> profile = nw.getProfile();
+//						
+//						
+//						logger.info("pairwise alignment (" + tupleQuery._1() + ", "  + tupleTarget._1() + ")");
+//			}
+//		});
+	
+		JavaPairRDD<Tuple2<Integer, Integer>, SPairwiseSequenceScorer> scorersRDD = pairs.mapToPair(pair -> {
 			
-			while (joinedSeq.hasNext()) {
-				
-				Tuple2<Tuple2<Integer, SDNASequence>, Tuple2<Integer, SDNASequence>> sequencePair = joinedSeq.next();
-				
-				Tuple2<Integer, SDNASequence> tupleQuery = sequencePair._1();
-				Tuple2<Integer, SDNASequence> tupleTarget = sequencePair._2();
-				
-				
-						GapPenalty gapPenalty = new SimpleGapPenalty();
-						SubstitutionMatrix<NucleotideCompound> subMatrix = SubstitutionMatrixHelper.getNuc4_4();
-						
-						PairwiseSequenceScorer<DNASequence, NucleotideCompound> pairwiseScorer = 
-								new FractionalIdentityScorer<DNASequence, NucleotideCompound>(new 
-								NeedlemanWunsch<DNASequence, NucleotideCompound>(
-										tupleQuery._2().getDNASequence(), 
-										tupleTarget._2().getDNASequence(), 
-										gapPenalty, 
-										subMatrix));
-						
-						double score = pairwiseScorer.getScore();
-						
-						logger.info("pairwise alignment ( " + tupleQuery._1() + ", "  + tupleTarget._1() + ")");
-			}
+			Tuple2<Integer, SDNASequence> tupleQuery = pair._1();
+			Tuple2<Integer, SDNASequence> tupleTarget = pair._2();
+
+			GapPenalty gapPenalty = new SimpleGapPenalty();
+			SubstitutionMatrix<NucleotideCompound> subMatrix = SubstitutionMatrixHelper.getNuc4_4();
+			
+			NeedlemanWunsch<DNASequence, NucleotideCompound> needlemanWunsch = 
+					new NeedlemanWunsch<DNASequence, NucleotideCompound>(
+					tupleQuery._2().getDNASequence(), 
+					tupleTarget._2().getDNASequence(), 
+					gapPenalty, 
+					subMatrix);
+			
+			Tuple2<Tuple2<Integer, Integer>, SPairwiseSequenceScorer> 
+				scorerSequence = new Tuple2<Tuple2<Integer, Integer>, SPairwiseSequenceScorer>
+					(new Tuple2<Integer, Integer>(tupleQuery._1() ,tupleTarget._1()), new SPairwiseSequenceScorer(needlemanWunsch));
+			
+			logger.info("pairwise alignment (" + tupleQuery._1() + ", "  + tupleTarget._1() + ")");
+			
+			return scorerSequence;
+			
 		});
+		
+		
+		// stage 2: hierarchical clustering into a guide tree
+		
+		//       a:
+		List<Tuple2<Tuple2<Integer, Integer>, Double>> distances = scorersRDD.mapToPair(scorerSequence -> {
+			return new Tuple2<Tuple2<Integer, Integer>, Double>(new Tuple2<Integer, Integer>
+			(scorerSequence._1()._1(), scorerSequence._1()._2()), scorerSequence._2().getDistance());
+		}).collect();
+		
+		
+		
+		//       b:
+		distances.forEach(distance -> {
+			logger.info("(" + distance._1()._1() + ", " + distance._1()._2() 
+					+ ") distance --> " + distance._2());
+		});
+		
+		// stage 3: progressive alignment
 		
 	}
 	

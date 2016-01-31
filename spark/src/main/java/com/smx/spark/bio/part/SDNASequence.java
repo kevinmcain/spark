@@ -54,7 +54,7 @@ public class SDNASequence implements Serializable {
 		return dnaSequence;
 	}
 
-	private void setDNASequence(DNASequence dnaSequence) {
+	public void setDNASequence(DNASequence dnaSequence) {
 		this.dnaSequence = dnaSequence;
 		this.proxyLoader = (ArrayListSequenceReader<NucleotideCompound>)dnaSequence.getProxySequenceReader();
 		this.parsedCompounds = proxyLoader.getAsList(); 

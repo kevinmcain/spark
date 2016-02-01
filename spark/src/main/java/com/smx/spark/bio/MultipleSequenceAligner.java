@@ -5,8 +5,10 @@ import java.io.File;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.net.InetAddress;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
 import com.smx.spark.bio.part.DNAPartitioner;
@@ -15,14 +17,28 @@ import com.smx.spark.bio.part.SPairwiseSequenceScorer;
 
 import org.biojava.nbio.core.sequence.AccessionID;
 import org.biojava.nbio.core.sequence.DNASequence;
+import org.biojava.nbio.core.sequence.MultipleSequenceAlignment;
 import org.biojava.nbio.core.sequence.compound.NucleotideCompound;
+import org.biojava.nbio.core.sequence.template.Sequence;
+import org.biojava.nbio.core.util.ConcurrencyTools;
+import org.biojava.nbio.phylo.TreeConstructionAlgorithm;
+import org.biojava.nbio.phylo.TreeConstructor;
+import org.biojava.nbio.phylo.TreeType;
+import org.biojava.nbio.alignment.Alignments.ProfileProfileAlignerType;
 import org.biojava.nbio.alignment.FractionalIdentityScorer;
 import org.biojava.nbio.alignment.GuideTree;
 import org.biojava.nbio.alignment.NeedlemanWunsch;
 import org.biojava.nbio.alignment.SimpleGapPenalty;
+import org.biojava.nbio.alignment.SimpleProfileProfileAligner;
 import org.biojava.nbio.alignment.SubstitutionMatrixHelper;
+import org.biojava.nbio.alignment.template.AlignedSequence;
+import org.biojava.nbio.alignment.template.CallableProfileProfileAligner;
 import org.biojava.nbio.alignment.template.GapPenalty;
+import org.biojava.nbio.alignment.template.GuideTreeNode;
 import org.biojava.nbio.alignment.template.PairwiseSequenceScorer;
+import org.biojava.nbio.alignment.template.Profile;
+import org.biojava.nbio.alignment.template.ProfilePair;
+import org.biojava.nbio.alignment.template.ProfileProfileAligner;
 import org.biojava.nbio.alignment.template.SubstitutionMatrix;
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -149,18 +165,96 @@ public class MultipleSequenceAligner {
 		@SuppressWarnings("rawtypes")
 		GuideTree<DNASequence, NucleotideCompound> tree = new GuideTree(sequences, scorers);
 		
-		writeToFile("tree", tree.toString());
+//		writeToFile("tree", tree.toString());
 		
-		//       b:
-		distances.forEach(distance -> {  
-			logger.info("(" + distance._1()._1() + ", " + distance._1()._2() 
-					+ ") distance --> " + distance._2());
-		});
+//		distances.forEach(distance -> {  
+//			logger.info("(" + distance._1()._1() + ", " + distance._1()._2() 
+//					+ ") distance --> " + distance._2());
+//		});
 		
+		
+		
+		// TODO: need to distribute alignment tasks below. refactor from use of executer to spark cluster
+		//       its probably worth collecting the sequences first in order to determine if the output is
+		//       in line with the output from the phylogen project solution.
 		// stage 3: progressive alignment
+		
+        // find inner nodes in post-order traversal of tree (each leaf node has a single sequence profile)
+        List<GuideTreeNode<DNASequence, NucleotideCompound>> innerNodes = new ArrayList<GuideTreeNode<DNASequence, NucleotideCompound>>();
+        for (GuideTreeNode<DNASequence, NucleotideCompound> n : tree) {
+            if (n.getProfile() == null) {
+                innerNodes.add(n);
+            }
+        }
 
+		GapPenalty gapPenalty = new SimpleGapPenalty();
+		SubstitutionMatrix<NucleotideCompound> subMatrix = SubstitutionMatrixHelper.getNuc4_4();
+        
+        // submit alignment tasks to the shared thread pool
+        int i = 1, all = innerNodes.size();
+        for (GuideTreeNode<DNASequence, NucleotideCompound> n : innerNodes) {
+            Profile<DNASequence, NucleotideCompound> p1 = n.getChild1().getProfile(), p2 = n.getChild2().getProfile();
+            Future<ProfilePair<DNASequence, NucleotideCompound>> pf1 = n.getChild1().getProfileFuture(), pf2 = n.getChild2().getProfileFuture();
+            ProfileProfileAligner<DNASequence, NucleotideCompound> aligner =
+                    (p1 != null) ? ((p2 != null) ? new SimpleProfileProfileAligner<DNASequence, NucleotideCompound>(p1, p2, gapPenalty, subMatrix) :
+                    	new SimpleProfileProfileAligner<DNASequence, NucleotideCompound>(p1, pf2, gapPenalty, subMatrix)) :
+                    ((p2 != null) ? new SimpleProfileProfileAligner<DNASequence, NucleotideCompound>(pf1, p2, gapPenalty, subMatrix) :
+                    	new SimpleProfileProfileAligner<DNASequence, NucleotideCompound>(pf1, pf2, gapPenalty, subMatrix));
+            n.setProfileFuture(ConcurrencyTools.submit(new CallableProfileProfileAligner<DNASequence, NucleotideCompound>(aligner), String.format(
+                    "Aligning pair %d of %d", i++, all)));
+        }
+		
+        // stage 3: progressive alignment - finished
+        Profile<DNASequence, NucleotideCompound> msa = tree.getRoot().getProfile(); 
+        buildTree(msa); 
+        
 	}
 	
+	/** Are we on the right track?
+	 * 
+	 * @param msa
+	 */
+	private static void buildTree(Profile<DNASequence, NucleotideCompound> msa){
+		MultipleSequenceAlignment<DNASequence, NucleotideCompound> 
+		multipleSequenceAlignment= new MultipleSequenceAlignment <DNASequence, NucleotideCompound>();
+	
+		List<AlignedSequence<DNASequence,NucleotideCompound>> 
+			alignedSequenceList = msa.getAlignedSequences();
+		
+		Sequence<NucleotideCompound> seq;
+		DNASequence dnaSeq;
+	       
+		try {
+			   
+			for (int i = 0; i < alignedSequenceList.size(); i++) {     
+				seq = alignedSequenceList.get(i);
+				dnaSeq=new DNASequence(seq.getSequenceAsString(),seq.getCompoundSet());
+				dnaSeq.setAccession(seq.getAccession());
+				multipleSequenceAlignment.addAlignedSequence(dnaSeq);
+			}   
+		} 
+		catch(Exception e) {
+			System.out.printf(e.getMessage());
+		}
+	
+		TreeConstructor<DNASequence, NucleotideCompound> 
+			treeConstructor = new TreeConstructor<DNASequence, NucleotideCompound>(
+					multipleSequenceAlignment, 
+					TreeType.NJ, 
+					TreeConstructionAlgorithm.PID, 
+					new ProgessListenerStub());
+		try	{
+			treeConstructor.process();   
+			String newick = treeConstructor.getNewickString(true, true);
+			logger.info(newick);
+		}
+		catch (Exception e) {
+			logger.info(e.getMessage());
+		}
+		
+		ConcurrencyTools.shutdown();
+
+	}
 
 //	"Any fool can write code that a computer can understand. Good programmers write code that humans can understand." --- Martin Fowler 
 //	Please correct my English.

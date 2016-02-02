@@ -8,6 +8,7 @@ import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
@@ -193,8 +194,13 @@ public class MultipleSequenceAligner {
         // submit alignment tasks to the shared thread pool
         int i = 1, all = innerNodes.size();
         for (GuideTreeNode<DNASequence, NucleotideCompound> n : innerNodes) {
-            Profile<DNASequence, NucleotideCompound> p1 = n.getChild1().getProfile(), p2 = n.getChild2().getProfile();
-            Future<ProfilePair<DNASequence, NucleotideCompound>> pf1 = n.getChild1().getProfileFuture(), pf2 = n.getChild2().getProfileFuture();
+            
+        	Profile<DNASequence, NucleotideCompound> p1 = n.getChild1().getProfile();
+            Profile<DNASequence, NucleotideCompound> p2 = n.getChild2().getProfile();
+    		
+            Future<ProfilePair<DNASequence, NucleotideCompound>> pf1 = n.getChild1().getProfileFuture();
+            Future<ProfilePair<DNASequence, NucleotideCompound>> pf2 = n.getChild2().getProfileFuture();
+            
             ProfileProfileAligner<DNASequence, NucleotideCompound> aligner =
                     (p1 != null) ? ((p2 != null) ? new SimpleProfileProfileAligner<DNASequence, NucleotideCompound>(p1, p2, gapPenalty, subMatrix) :
                     	new SimpleProfileProfileAligner<DNASequence, NucleotideCompound>(p1, pf2, gapPenalty, subMatrix)) :
@@ -202,6 +208,18 @@ public class MultipleSequenceAligner {
                     	new SimpleProfileProfileAligner<DNASequence, NucleotideCompound>(pf1, pf2, gapPenalty, subMatrix));
             n.setProfileFuture(ConcurrencyTools.submit(new CallableProfileProfileAligner<DNASequence, NucleotideCompound>(aligner), String.format(
                     "Aligning pair %d of %d", i++, all)));
+        }
+        
+        // retrieve the alignment results
+        for (GuideTreeNode<DNASequence, NucleotideCompound> n : innerNodes) {
+            // TODO when added to ConcurrencyTools, log completions and exceptions instead of printing stack traces
+            try {
+                n.setProfile(n.getProfileFuture().get());
+            } catch (InterruptedException e) {
+                logger.error("Interrupted Exception: ", e);
+            } catch (ExecutionException e) {
+                logger.error("Execution Exception: ", e);
+            }
         }
 		
         // stage 3: progressive alignment - finished

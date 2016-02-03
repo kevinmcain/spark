@@ -25,7 +25,6 @@ import org.biojava.nbio.core.util.ConcurrencyTools;
 import org.biojava.nbio.phylo.TreeConstructionAlgorithm;
 import org.biojava.nbio.phylo.TreeConstructor;
 import org.biojava.nbio.phylo.TreeType;
-import org.biojava.nbio.alignment.Alignments.ProfileProfileAlignerType;
 import org.biojava.nbio.alignment.FractionalIdentityScorer;
 import org.biojava.nbio.alignment.GuideTree;
 import org.biojava.nbio.alignment.NeedlemanWunsch;
@@ -162,9 +161,15 @@ public class MultipleSequenceAligner {
 			return dist._2();
 		}).collect(Collectors.toList());
 		
+		// TODO: temporary for checking progress...
+		List<DNASequence> dnaSequenceList = sequenceRDD.map(sequence -> {
+			return sequence._2();
+		}).collect().stream().map(seq -> {
+			return seq.getDNASequence();
+		}).collect(Collectors.toList());
 		
 		@SuppressWarnings("rawtypes")
-		GuideTree<DNASequence, NucleotideCompound> tree = new GuideTree(sequences, scorers);
+		GuideTree<DNASequence, NucleotideCompound> tree = new GuideTree(dnaSequenceList, scorers);
 		
 //		writeToFile("tree", tree.toString());
 		
@@ -172,9 +177,7 @@ public class MultipleSequenceAligner {
 //			logger.info("(" + distance._1()._1() + ", " + distance._1()._2() 
 //					+ ") distance --> " + distance._2());
 //		});
-		
-		
-		
+
 		// TODO: need to distribute alignment tasks below. refactor from use of executer to spark cluster
 		//       its probably worth collecting the sequences first in order to determine if the output is
 		//       in line with the output from the phylogen project solution.

@@ -1,6 +1,7 @@
 package com.smx.spark.bio;
 
 import java.io.BufferedWriter;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
@@ -53,6 +54,8 @@ import com.amazonaws.auth.InstanceProfileCredentialsProvider;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.model.GetObjectRequest;
+import com.amazonaws.services.s3.model.ObjectMetadata;
+import com.amazonaws.services.s3.model.PutObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
 
@@ -70,40 +73,34 @@ public class MultipleSequenceAligner {
 		
 		try {
 			logger.info("starting NeedlmanWunsch at " + InetAddress.getLocalHost().getHostName());	
-		} catch(Exception e) {
+		} catch(Exception e) { 
 			logger.info(e.getMessage());	
 		}
 		
-//		// for deployment		
-//		JavaSparkContext sc = new JavaSparkContext(new SparkConf()
-//        	.setAppName("Bio Application"));
-		
-		// for development
+		// for deployment		
 		JavaSparkContext sc = new JavaSparkContext(new SparkConf()
-    		.setAppName("Bio Application")
-        	.setMaster("local[1]"));
+        	.setAppName("Bio Application"));
+		
+//		// for development
+//		JavaSparkContext sc = new JavaSparkContext(new SparkConf()
+//    		.setAppName("Bio Application")
+//        	.setMaster("local[1]"));
 		
 		JavaRDD<String> inputRDD = sc.textFile(args[0]);
 		
 		Broadcast<Integer> count = sc.broadcast((int)(long)inputRDD.count());
 		
 		JavaPairRDD<Integer, SDNASequence> 
-			sequenceRDD = transformToPartitionSDNASequence(inputRDD, true); // <-- local = true 
+			sequenceRDD = transformToPartitionSDNASequence(inputRDD); // <-- local = true 
 
 		
 		//writeSDNASequenceToHdfs(sequenceRDD);
-		
-		
-		//		x,x 0,1 0,2 0,3 0,4
-		//		x,x x,x 1,2 1,3 1,4
-		//		x,x x,x x,x 2,3 2,4
-		//		x,x x,x x,x x,x 3,4
-		//		x,x x,x x,x x,x x,x
 
 		// cartesian renders the table above and filter removes those x,x pairs for a distinct set 
 		JavaPairRDD<Tuple2<Integer, SDNASequence>, Tuple2<Integer, SDNASequence>> pairs = 
 				sequenceRDD.cartesian(sequenceRDD).filter(x -> { return x._1()._1() < x._2()._1();});
 	
+		// stage 1: pairwise similarity calculation - lazy transformation
 		JavaPairRDD<Tuple2<Integer, Integer>, SPairwiseSequenceScorer> 
 			scorersRDD = pairs.mapToPair(pair -> {
 			
@@ -115,76 +112,43 @@ public class MultipleSequenceAligner {
 				GapPenalty gapPenalty = new SimpleGapPenalty();
 				SubstitutionMatrix<NucleotideCompound> subMatrix = SubstitutionMatrixHelper.getNuc4_4();
 				
-				NeedlemanWunsch<DNASequence, NucleotideCompound> needlemanWunsch = 
+				
+				FractionalIdentityScorer<DNASequence, NucleotideCompound> fractionalIdentityScorer = 
+						new FractionalIdentityScorer<DNASequence, NucleotideCompound>( 
 						new NeedlemanWunsch<DNASequence, NucleotideCompound>(
 						tupleQuery._2().getDNASequence(), 
 						tupleTarget._2().getDNASequence(), 
 						gapPenalty, 
-						subMatrix);
+						subMatrix));
 				
 				Tuple2<Tuple2<Integer, Integer>, SPairwiseSequenceScorer> 
 				scorerSequence = new Tuple2<Tuple2<Integer, Integer>, SPairwiseSequenceScorer>
-					(new Tuple2<Integer, Integer>(tupleQuery._1() ,tupleTarget._1()), new SPairwiseSequenceScorer(needlemanWunsch));
+					(new Tuple2<Integer, Integer>(tupleQuery._1() ,tupleTarget._1()), new SPairwiseSequenceScorer(fractionalIdentityScorer));
 	
 				return scorerSequence;
 		});
 		
-		
-		// stage 2: hierarchical clustering into a guide tree
-		
-		//       a:
-		List<Tuple2<Tuple2<Integer, Integer>, SPairwiseSequenceScorer>> distances = scorersRDD.mapToPair(scorerSequence -> {
-			return new Tuple2<Tuple2<Integer, Integer>, SPairwiseSequenceScorer>(new Tuple2<Integer, Integer>
-			(scorerSequence._1()._1(), scorerSequence._1()._2()), scorerSequence._2());
+		logger.info("pairwise similarity calculation - call to action with collect");
+		// stage 1: pairwise similarity calculation - call to action with collect
+		List<SPairwiseSequenceScorer> scorers = scorersRDD.map(scorerSequence -> {
+			return scorerSequence._2();
 		}).collect();
 		
-		// get all sequence input strings as list of string
-		 List<String> accessionIds = sequenceRDD.map(sdnaSequence -> {
-			 return sdnaSequence._2().getDNASequence().getAccession().getID();
-		 }).collect();
-		 
-		// Need List of DNASequence that have all but actual sequence data
-		List<DNASequence> sequences = accessionIds.stream().map( id -> {
-			DNASequence dnaSequence = null;
-			try {
-				dnaSequence = new DNASequence("ATCG");
-				dnaSequence.setAccession(new AccessionID(id));
-				
-			} catch (Exception e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-			return dnaSequence;
-		}).collect(Collectors.toList());
-		
-		List<SPairwiseSequenceScorer> scorers = distances.stream().map(dist -> {
-			return dist._2();
-		}).collect(Collectors.toList());
-		
-		// TODO: temporary for checking progress...
 		List<DNASequence> dnaSequenceList = sequenceRDD.map(sequence -> {
 			return sequence._2();
 		}).collect().stream().map(seq -> {
 			return seq.getDNASequence();
 		}).collect(Collectors.toList());
 		
+		logger.info("building guide tree");
 		@SuppressWarnings("rawtypes")
-		GuideTree<DNASequence, NucleotideCompound> tree = new GuideTree(dnaSequenceList, scorers);
-		
-//		writeToFile("tree", tree.toString());
-		
-//		distances.forEach(distance -> {  
-//			logger.info("(" + distance._1()._1() + ", " + distance._1()._2() 
-//					+ ") distance --> " + distance._2());
-//		});
-
-		// TODO: need to distribute alignment tasks below. refactor from use of executer to spark cluster
-		//       its probably worth collecting the sequences first in order to determine if the output is
-		//       in line with the output from the phylogen project solution.
-		// stage 3: progressive alignment
+		GuideTree<DNASequence, NucleotideCompound> tree 
+			= new GuideTree(dnaSequenceList, scorers);
 		
         // find inner nodes in post-order traversal of tree (each leaf node has a single sequence profile)
-        List<GuideTreeNode<DNASequence, NucleotideCompound>> innerNodes = new ArrayList<GuideTreeNode<DNASequence, NucleotideCompound>>();
+        List<GuideTreeNode<DNASequence, NucleotideCompound>> innerNodes 
+        	= new ArrayList<GuideTreeNode<DNASequence, NucleotideCompound>>();
+        
         for (GuideTreeNode<DNASequence, NucleotideCompound> n : tree) {
             if (n.getProfile() == null) {
                 innerNodes.add(n);
@@ -226,12 +190,13 @@ public class MultipleSequenceAligner {
         }
 		
         // stage 3: progressive alignment - finished
+        logger.info("progressive alignment - finished");
         Profile<DNASequence, NucleotideCompound> msa = tree.getRoot().getProfile(); 
-        buildTree(msa); 
         
+        buildTree(msa);
 	}
 	
-	/** Are we on the right track?
+	/**
 	 * 
 	 * @param msa
 	 */
@@ -258,6 +223,8 @@ public class MultipleSequenceAligner {
 			System.out.printf(e.getMessage());
 		}
 	
+		logger.info("tree constructor phase");
+		
 		TreeConstructor<DNASequence, NucleotideCompound> 
 			treeConstructor = new TreeConstructor<DNASequence, NucleotideCompound>(
 					multipleSequenceAlignment, 
@@ -265,20 +232,20 @@ public class MultipleSequenceAligner {
 					TreeConstructionAlgorithm.PID, 
 					new ProgessListenerStub());
 		try	{
+
 			treeConstructor.process();   
 			String newick = treeConstructor.getNewickString(true, true);
-			logger.info(newick);
+			
+			logger.info("write newick output");
+			writeToFile("treeOutput/newick", newick);
+			writeFileToS3Bucket("treeOutput/newick", newick);
 		}
 		catch (Exception e) {
 			logger.info(e.getMessage());
 		}
 		
 		ConcurrencyTools.shutdown();
-
 	}
-
-//	"Any fool can write code that a computer can understand. Good programmers write code that humans can understand." --- Martin Fowler 
-//	Please correct my English.
 	
 	/** Writes all dna sequences to hdfs 
 	 * 
@@ -392,6 +359,18 @@ public class MultipleSequenceAligner {
 		} catch (Exception e) {
 			logger.info(e.getMessage());
 		}
+	}
+	
+	/** Writes the specified content to the specified bucket
+	 * 
+	 * @param keyName
+	 * @param content
+	 */
+	private static void writeFileToS3Bucket(String keyName, String content) {
+		// automatically configure credentials from ec2 instance
+		AmazonS3 s3Client = new AmazonS3Client(new InstanceProfileCredentialsProvider());
+		ByteArrayInputStream input = new ByteArrayInputStream(content.getBytes());
+		s3Client.putObject(new PutObjectRequest( S3_BUCKET, keyName, input, new ObjectMetadata()));
 	}
 	
 	/**

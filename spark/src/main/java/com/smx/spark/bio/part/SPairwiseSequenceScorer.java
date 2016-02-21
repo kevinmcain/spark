@@ -38,18 +38,18 @@ public class SPairwiseSequenceScorer
 	
 	public SPairwiseSequenceScorer() { }
 	
-	public SPairwiseSequenceScorer(NeedlemanWunsch<DNASequence, NucleotideCompound> needlemanWunsch) {
+	public SPairwiseSequenceScorer(FractionalIdentityScorer<DNASequence, NucleotideCompound> fractionalIdentityScorer) {
 		//query = new SDNASequence();
 		//query.setDNASequence(needlemanWunsch.getQuery());
 		//target = new SDNASequence();
 		//target.setDNASequence(needlemanWunsch.getTarget());
 		//profile = needlemanWunsch.getProfile();
 		
-		distance = needlemanWunsch.getDistance();
-		maxScore = needlemanWunsch.getMaxScore();
-		minScore = needlemanWunsch.getMinScore();
-		score = needlemanWunsch.getScore();
-		similarity = needlemanWunsch.getSimilarity();
+		distance = fractionalIdentityScorer.getDistance();
+		maxScore = fractionalIdentityScorer.getMaxScore();
+		minScore = fractionalIdentityScorer.getMinScore();
+		score = fractionalIdentityScorer.getScore();
+		similarity = fractionalIdentityScorer.getSimilarity();
 	}
 
 	@Override

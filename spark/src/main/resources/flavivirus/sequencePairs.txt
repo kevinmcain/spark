@@ -1,0 +1,4 @@
+0,flavivirus/dengue.fna
+1,flavivirus/zika.fna
+2,flavivirus/westNile.fna
+3,flavivirus/yellowFever.fna

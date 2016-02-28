@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 import com.smx.spark.bio.part.DNAPartitioner;
 import com.smx.spark.bio.part.SDNASequence;
 import com.smx.spark.bio.part.SPairwiseSequenceScorer;
+import com.smx.spark.bio.part.ScorerPartitioner;
 
 import org.biojava.nbio.core.sequence.AccessionID;
 import org.biojava.nbio.core.sequence.DNASequence;
@@ -72,14 +73,19 @@ public class MultipleSequenceAligner {
 		//WriteDNASequence.wholeTextFilesBug();
 		
 		try {
-			logger.info("starting NeedlmanWunsch at " + InetAddress.getLocalHost().getHostName());	
+			logger.info("Starting Multiple Sequence Alignment at: " + InetAddress.getLocalHost().getHostName());	
 		} catch(Exception e) { 
 			logger.info(e.getMessage());	
 		}
-		
+
 		// for deployment		
 		JavaSparkContext sc = new JavaSparkContext(new SparkConf()
-        	.setAppName("Bio Application"));
+        	.setAppName("Bio Application")
+        	//.set("spark.core.connection.ack.wait.timeout","600")
+        	//.set("spark.driver.maxResultSize", "12g")
+        	//.set("spark.driver.memory", "12g")
+        	//.set("spark.executor.memory", "12g")
+        	);
 		
 //		// for development
 //		JavaSparkContext sc = new JavaSparkContext(new SparkConf()
@@ -88,17 +94,20 @@ public class MultipleSequenceAligner {
 		
 		JavaRDD<String> inputRDD = sc.textFile(args[0]);
 		
-		Broadcast<Integer> count = sc.broadcast((int)(long)inputRDD.count());
+		Integer count = new Integer((int)inputRDD.count());
 		
 		JavaPairRDD<Integer, SDNASequence> 
 			sequenceRDD = transformToPartitionSDNASequence(inputRDD); // <-- local = true 
-
+		
+		logger.info("sequenceRDD built");
 		
 		//writeSDNASequenceToHdfs(sequenceRDD);
 
 		// cartesian renders the table above and filter removes those x,x pairs for a distinct set 
 		JavaPairRDD<Tuple2<Integer, SDNASequence>, Tuple2<Integer, SDNASequence>> pairs = 
 				sequenceRDD.cartesian(sequenceRDD).filter(x -> { return x._1()._1() < x._2()._1();});
+		
+		logger.info("pairwise similarity calculation - lazy transformation");
 	
 		// stage 1: pairwise similarity calculation - lazy transformation
 		JavaPairRDD<Tuple2<Integer, Integer>, SPairwiseSequenceScorer> 
@@ -112,6 +121,13 @@ public class MultipleSequenceAligner {
 				GapPenalty gapPenalty = new SimpleGapPenalty();
 				SubstitutionMatrix<NucleotideCompound> subMatrix = SubstitutionMatrixHelper.getNuc4_4();
 				
+				// debug
+//				DNASequence query = tupleQuery._2().getDNASequence();
+//				DNASequence target = tupleQuery._2().getDNASequence();
+//				
+//				Tuple2<Tuple2<Integer, Integer>, SPairwiseSequenceScorer> 
+//				scorerSequence = new Tuple2<Tuple2<Integer, Integer>, SPairwiseSequenceScorer>
+//					(new Tuple2<Integer, Integer>(tupleQuery._1() ,tupleTarget._1()), new SPairwiseSequenceScorer());
 				
 				FractionalIdentityScorer<DNASequence, NucleotideCompound> fractionalIdentityScorer = 
 						new FractionalIdentityScorer<DNASequence, NucleotideCompound>( 
@@ -126,7 +142,20 @@ public class MultipleSequenceAligner {
 					(new Tuple2<Integer, Integer>(tupleQuery._1() ,tupleTarget._1()), new SPairwiseSequenceScorer(fractionalIdentityScorer));
 	
 				return scorerSequence;
-		});
+		}).partitionBy(new ScorerPartitioner(count));
+		
+		
+//		scorersRDD.foreachPartition( part -> {
+//			while (part.hasNext()) {
+//				Tuple2<Tuple2<Integer, Integer>, SPairwiseSequenceScorer> scorerSequence = part.next();
+//				logger.info(scorerSequence._1()._1() +","+ scorerSequence._1()._2());
+//				logger.info("it one");
+//			}
+//			logger.info("part one");
+//		});
+		
+		// rdd.toLocalIterator lets you read one rdd partition at a time
+		//scorersRDD.coalesce(10);
 		
 		logger.info("pairwise similarity calculation - call to action with collect");
 		// stage 1: pairwise similarity calculation - call to action with collect
@@ -134,11 +163,15 @@ public class MultipleSequenceAligner {
 			return scorerSequence._2();
 		}).collect();
 		
+		logger.info("collected scorers");
+		
 		List<DNASequence> dnaSequenceList = sequenceRDD.map(sequence -> {
 			return sequence._2();
 		}).collect().stream().map(seq -> {
 			return seq.getDNASequence();
 		}).collect(Collectors.toList());
+		
+		logger.info("collected sequences");
 		
 		logger.info("building guide tree");
 		@SuppressWarnings("rawtypes")
@@ -237,7 +270,7 @@ public class MultipleSequenceAligner {
 			String newick = treeConstructor.getNewickString(true, true);
 			
 			logger.info("write newick output");
-			writeToFile("treeOutput/newick", newick);
+			//writeToFile("treeOutput/newick", newick);
 			writeFileToS3Bucket("treeOutput/newick", newick);
 		}
 		catch (Exception e) {
@@ -289,6 +322,7 @@ public class MultipleSequenceAligner {
 		Integer count = new Integer((int)inputRDD.count());
 		
 		return inputRDD.mapToPair((line) ->  {
+			
 					String[] idAndKeyName = line.split(",");
 					Integer id = Integer.parseInt(idAndKeyName[0]);
 					String keyName = idAndKeyName[1]; 
@@ -303,6 +337,7 @@ public class MultipleSequenceAligner {
 			    	
 			        S3Object object = s3Client.getObject(request); 
 			        sdnaSequence.setSDNASequence(object.getObjectContent());
+			        object.close();
 			        sdnaSequence.setPartitionId(id);
 			        sdnaSequence.setFileName(keyName);
 
@@ -320,7 +355,7 @@ public class MultipleSequenceAligner {
 	private static JavaPairRDD<Integer, SDNASequence> 
 		transformToPartitionSDNASequence(JavaRDD<String> inputRDD, Boolean local) {
 		
-		if (!local) return transformToPartitionSDNASequence(inputRDD);  
+		if (!local) return transformToPartitionSDNASequence(inputRDD); 
 		
 		Integer count = new Integer((int)inputRDD.count());
 		

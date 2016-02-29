@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.biojava.nbio.core.sequence.DNASequence;
+import org.biojava.nbio.core.sequence.compound.DNACompoundSet;
 import org.biojava.nbio.core.sequence.compound.NucleotideCompound;
 import org.biojava.nbio.core.sequence.io.FastaReaderHelper;
 import org.biojava.nbio.core.sequence.io.FastaWriterHelper;
@@ -118,6 +119,11 @@ public class SDNASequence implements Serializable {
 		this.partitionId = (Integer)stream.readObject();
 		this.fileName = (String) stream.readObject();
 		// the final part of the stream is a fasta file input stream
-		this.setSDNASequence(stream);
+		try {
+			this.dnaSequence = new DNASequence(stream.readUTF(), DNACompoundSet.getDNACompoundSet());	
+		} catch (Exception e) {
+			
+		}
+		
     }
 }

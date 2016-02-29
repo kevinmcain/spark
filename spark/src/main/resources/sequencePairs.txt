@@ -1,5 +1,7 @@
-0,src/main/resources/aone.fna
-1,src/main/resources/atwo.fna
-2,src/main/resources/athree.fna
-3,src/main/resources/afour.fna
-4,src/main/resources/afive.fna
+0,src/main/resources/flavivirus/dengue.fna
+1,src/main/resources/flavivirus/zika.fna
+2,src/main/resources/flavivirus/westNile.fna
+3,src/main/resources/flavivirus/yellowFever.fna
+4,src/main/resources/flavivirus/sepik.fna
+5,src/main/resources/flavivirus/koutango.fna
+6,src/main/resources/flavivirus/spondweni.fna

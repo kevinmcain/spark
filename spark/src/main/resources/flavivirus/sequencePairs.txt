@@ -2,6 +2,6 @@
 1,flavivirus/zika.fna
 2,flavivirus/westNile.fna
 3,flavivirus/yellowFever.fna
-4,flavivirus/koutango.fna
-5,flavivirus/spondweni.fna
-6,flavivirus/sepik.fna
+4,flavivirus/sepik.fna
+5,flavivirus/koutango.fna
+6,flavivirus/spondweni.fna

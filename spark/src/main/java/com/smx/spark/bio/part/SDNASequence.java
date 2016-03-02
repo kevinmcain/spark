@@ -1,20 +1,17 @@
 package com.smx.spark.bio.part;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.Serializable;
-import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import org.biojava.nbio.core.sequence.DNASequence;
-import org.biojava.nbio.core.sequence.compound.DNACompoundSet;
-import org.biojava.nbio.core.sequence.compound.NucleotideCompound;
 import org.biojava.nbio.core.sequence.io.FastaReaderHelper;
 import org.biojava.nbio.core.sequence.io.FastaWriterHelper;
-import org.biojava.nbio.core.sequence.storage.ArrayListSequenceReader;
-import org.biojava.nbio.core.sequence.template.SequenceReader;
 
 /** Proxy class for DNASequence implements Serializable.
  * 
@@ -32,39 +29,23 @@ public class SDNASequence implements Serializable {
 	private static final long serialVersionUID = 2814589781198243348L;
 	
 	private transient DNASequence dnaSequence;
-	// DNASequence is an AbstractSequence which has a sequenceStorage member 
-	// that is a SequenceReader<C> which is instantiated as ArrayListSequenceReader
-	private transient ArrayListSequenceReader<NucleotideCompound> proxyLoader; //sequenceStorage;
 
-	// This is a member of ArrayListSequenceReader
-	private List<NucleotideCompound> parsedCompounds;
-	private Integer partitionId;
-	private String fileName = "";
-	
 	public SDNASequence() {
 		//this.dnaSequence = null;
 	}
 	
 	public DNASequence getDNASequence() {
-		if (dnaSequence == null){
-			proxyLoader = new ArrayListSequenceReader<NucleotideCompound>();
-			proxyLoader.setContents(parsedCompounds);
-			dnaSequence = new DNASequence(proxyLoader);
-		}
-			
 		return dnaSequence;
 	}
 
 	public void setDNASequence(DNASequence dnaSequence) {
 		this.dnaSequence = dnaSequence;
-		this.proxyLoader = (ArrayListSequenceReader<NucleotideCompound>)dnaSequence.getProxySequenceReader();
-		this.parsedCompounds = proxyLoader.getAsList(); 
 	}
 
-	public void setSDNASequence(java.io.InputStream stream) throws IOException {
+	public void setSDNASequence(java.io.InputStream input) throws IOException {
 
     	Map<String, DNASequence> linkedHashMap = 
-    			FastaReaderHelper.readFastaDNASequence(stream);
+    			FastaReaderHelper.readFastaDNASequence(input);
 
 		List<DNASequence> list = 
 				new ArrayList<DNASequence>(linkedHashMap.values());
@@ -72,23 +53,7 @@ public class SDNASequence implements Serializable {
 		// Attach writing host for diagnostics -> InetAddress.getLocalHost().getHostName();
 		this.setDNASequence(list.get(0));
 	}
-	
-	public Integer getPartitionId() {
-		return this.partitionId;
-	}
 
-	public void setPartitionId(Integer partitionId) {
-		this.partitionId = partitionId;
-	}
-	
-	public String getFileName() {
-		return this.fileName;
-	}
-	
-	public void setFileName(String fileName) {
-		this.fileName = fileName;
-	}
-	
 	/**
 	 * 
 	 * @param stream
@@ -98,10 +63,9 @@ public class SDNASequence implements Serializable {
             throws IOException {
 		
 		try {
-			stream.writeObject(this.partitionId);
-			stream.writeObject(this.fileName);
-			//stream.writeObject(this.parsedCompounds.toString());
+			
 			FastaWriterHelper.writeSequence(stream, this.dnaSequence);
+			
 		} catch (Exception e) {
 			throw new IOException(e.getMessage());
 		}
@@ -115,15 +79,29 @@ public class SDNASequence implements Serializable {
 	 */
 	private void readObject(java.io.ObjectInputStream stream)
             throws IOException, ClassNotFoundException {
-
-		this.partitionId = (Integer)stream.readObject();
-		this.fileName = (String) stream.readObject();
-		// the final part of the stream is a fasta file input stream
-		try {
-			this.dnaSequence = new DNASequence(stream.readUTF(), DNACompoundSet.getDNACompoundSet());	
-		} catch (Exception e) {
-			
-		}
 		
+		try {
+			
+			// must copy input stream before passing into FastaReaderHelper.readFastaDNASequence
+			// this prevents the issue of 'WARN TaskSetManager: Lost task ...
+			// io.netty.util.IllegalReferenceCountException: refCnt: 0
+			
+			ByteArrayOutputStream baos = new ByteArrayOutputStream();
+			byte[] buffer = new byte[1024];
+
+			int len;
+			while ((len = stream.read(buffer)) > -1 ) {
+			    baos.write(buffer, 0, len);
+			}
+			baos.flush();
+
+			// Open new InputStreams using the recorded bytes
+			InputStream input = new ByteArrayInputStream(baos.toByteArray());
+
+			this.setSDNASequence(input);
+			
+		} catch (Exception e) {
+			throw new IOException(e.getMessage());
+		}
     }
 }

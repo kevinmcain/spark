@@ -39,11 +39,6 @@ public class SPairwiseSequenceScorer
 	public SPairwiseSequenceScorer() { }
 	
 	public SPairwiseSequenceScorer(FractionalIdentityScorer<DNASequence, NucleotideCompound> fractionalIdentityScorer) {
-		//query = new SDNASequence();
-		//query.setDNASequence(needlemanWunsch.getQuery());
-		//target = new SDNASequence();
-		//target.setDNASequence(needlemanWunsch.getTarget());
-		//profile = needlemanWunsch.getProfile();
 		
 		distance = fractionalIdentityScorer.getDistance();
 		maxScore = fractionalIdentityScorer.getMaxScore();
@@ -106,13 +101,7 @@ public class SPairwiseSequenceScorer
             throws IOException {
 		
 		try {
-			//stream.writeObject(this.query);
-			//stream.writeObject(this.target);
-			stream.writeDouble(this.distance);
-			stream.writeDouble(this.maxScore);
-			stream.writeDouble(this.minScore);
-			stream.writeDouble(this.score);
-			stream.writeDouble(this.similarity);
+			stream.defaultWriteObject();
 		} catch (Exception e) {
 			throw new IOException(e.getMessage());
 		}
@@ -126,13 +115,7 @@ public class SPairwiseSequenceScorer
 	 */
 	private void readObject(java.io.ObjectInputStream stream)
             throws IOException, ClassNotFoundException {
-		
-		//this.query = (SDNASequence)stream.readObject();
-		//this.target = (SDNASequence)stream.readObject();
-		this.distance = (double) stream.readDouble();
-		this.maxScore = (double) stream.readDouble();
-		this.minScore = (double) stream.readDouble();
-		this.score = (double) stream.readDouble();
-		this.similarity = (double) stream.readDouble();
+
+		stream.defaultReadObject();
     }
 }

@@ -7,6 +7,7 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.net.InetAddress;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -54,6 +55,7 @@ import org.apache.spark.SparkConf;
 import com.amazonaws.auth.InstanceProfileCredentialsProvider;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
+import com.amazonaws.services.s3.model.CannedAccessControlList;
 import com.amazonaws.services.s3.model.GetObjectRequest;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.PutObjectRequest;
@@ -71,6 +73,9 @@ public class MultipleSequenceAligner {
 	public static void main(String[] args) {
 		 
 		//WriteDNASequence.wholeTextFilesBug();
+		
+		Date date = new Date();
+		logger.info(date.toString());
 		
 		try {
 			logger.info("Starting Multiple Sequence Alignment at: " + InetAddress.getLocalHost().getHostName());	
@@ -104,14 +109,22 @@ public class MultipleSequenceAligner {
 		//writeSDNASequenceToHdfs(sequenceRDD);
 
 		// cartesian renders the table above and filter removes those x,x pairs for a distinct set 
-		JavaPairRDD<Tuple2<Integer, SDNASequence>, Tuple2<Integer, SDNASequence>> pairs = 
+		JavaPairRDD<Tuple2<Integer, SDNASequence>, Tuple2<Integer, SDNASequence>> cartesianRDD = 
 				sequenceRDD.cartesian(sequenceRDD).filter(x -> { return x._1()._1() < x._2()._1();});
+		
+		Double numPartitions = new Double((int)count);
+		numPartitions--;
+		numPartitions = .5*(numPartitions*(numPartitions+1));
+		
+		// to repro java.lang.NullPointerException Task lost error seen on cluster, run coalesce shuffle = true.
+		JavaPairRDD<Tuple2<Integer, SDNASequence>, Tuple2<Integer, SDNASequence>> 
+			pairsRDD = cartesianRDD.coalesce(numPartitions.intValue(), false);
 		
 		logger.info("pairwise similarity calculation - lazy transformation");
 	
 		// stage 1: pairwise similarity calculation - lazy transformation
 		JavaPairRDD<Tuple2<Integer, Integer>, SPairwiseSequenceScorer> 
-			scorersRDD = pairs.mapToPair(pair -> {
+			scorersRDD = pairsRDD.mapToPair(pair -> {
 			
 				Tuple2<Integer, SDNASequence> tupleQuery = pair._1();
 				Tuple2<Integer, SDNASequence> tupleTarget = pair._2();
@@ -142,7 +155,7 @@ public class MultipleSequenceAligner {
 					(new Tuple2<Integer, Integer>(tupleQuery._1() ,tupleTarget._1()), new SPairwiseSequenceScorer(fractionalIdentityScorer));
 	
 				return scorerSequence;
-		}).partitionBy(new ScorerPartitioner(count));
+		}); //.partitionBy(new ScorerPartitioner(count));
 		
 		
 //		scorersRDD.foreachPartition( part -> {
@@ -155,15 +168,17 @@ public class MultipleSequenceAligner {
 //		});
 		
 		// rdd.toLocalIterator lets you read one rdd partition at a time
-		//scorersRDD.coalesce(10);
 		
-		logger.info("pairwise similarity calculation - call to action with collect");
+		date = new Date();
+		logger.info("pairwise similarity calculation - call to action with collect at " + date.toString());
+		
 		// stage 1: pairwise similarity calculation - call to action with collect
 		List<SPairwiseSequenceScorer> scorers = scorersRDD.map(scorerSequence -> {
 			return scorerSequence._2();
 		}).collect();
 		
-		logger.info("collected scorers");
+		date = new Date();
+		logger.info("collected scorers at " + date.toString());
 		
 		List<DNASequence> dnaSequenceList = sequenceRDD.map(sequence -> {
 			return sequence._2();
@@ -171,7 +186,9 @@ public class MultipleSequenceAligner {
 			return seq.getDNASequence();
 		}).collect(Collectors.toList());
 		
-		logger.info("collected sequences");
+		date = new Date();
+		
+		logger.info("collected sequences at " + date.toString());
 		
 		logger.info("building guide tree");
 		@SuppressWarnings("rawtypes")
@@ -269,7 +286,9 @@ public class MultipleSequenceAligner {
 			treeConstructor.process();   
 			String newick = treeConstructor.getNewickString(true, true);
 			
-			logger.info("write newick output");
+			Date date = new Date();
+			logger.info("write newick output " + date.toString());
+			
 			//writeToFile("treeOutput/newick", newick);
 			writeFileToS3Bucket("treeOutput/newick", newick);
 		}
@@ -295,7 +314,7 @@ public class MultipleSequenceAligner {
 			
 				Tuple2<Integer, SDNASequence> partDNASeq = record.next();
 
-		    	Path path = new Path(partDNASeq._2().getFileName());
+		    	Path path = new Path(partDNASeq._2().getDNASequence().getAccession().getIdentifier());
 		    	Configuration configuration = new Configuration();
 		    	FileSystem hdfs = path.getFileSystem(configuration);
 		    	if ( hdfs.exists( path )) { hdfs.delete( path, true ); } 
@@ -338,8 +357,6 @@ public class MultipleSequenceAligner {
 			        S3Object object = s3Client.getObject(request); 
 			        sdnaSequence.setSDNASequence(object.getObjectContent());
 			        object.close();
-			        sdnaSequence.setPartitionId(id);
-			        sdnaSequence.setFileName(keyName);
 
 					return new Tuple2<Integer, SDNASequence>(id, sdnaSequence);
 				})
@@ -367,8 +384,6 @@ public class MultipleSequenceAligner {
 					SDNASequence sdnaSequence = new SDNASequence();
 					File file = new File(keyName);					
 			        sdnaSequence.setSDNASequence(FileUtils.openInputStream(file));
-			        sdnaSequence.setPartitionId(id);
-			        sdnaSequence.setFileName(keyName);
 			        
 					return new Tuple2<Integer, SDNASequence>(id, sdnaSequence);
 				})
@@ -405,7 +420,11 @@ public class MultipleSequenceAligner {
 		// automatically configure credentials from ec2 instance
 		AmazonS3 s3Client = new AmazonS3Client(new InstanceProfileCredentialsProvider());
 		ByteArrayInputStream input = new ByteArrayInputStream(content.getBytes());
-		s3Client.putObject(new PutObjectRequest( S3_BUCKET, keyName, input, new ObjectMetadata()));
+		ObjectMetadata metadata = new ObjectMetadata();
+		metadata.setContentLength(content.length());
+		PutObjectRequest put = new PutObjectRequest(S3_BUCKET, keyName, input, metadata);
+		put.setCannedAcl(CannedAccessControlList.PublicRead);
+		s3Client.putObject(put);
 	}
 	
 	/**

@@ -5,3 +5,6 @@
 4,flavivirus/sepik.fna
 5,flavivirus/koutango.fna
 6,flavivirus/spondweni.fna
+7,flavivirus/cacipacore.fna
+8,flavivirus/kokobera.fna
+9,flavivirus/usutu.fna

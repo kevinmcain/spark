@@ -86,10 +86,6 @@ public class MultipleSequenceAligner {
 		// for deployment		
 		JavaSparkContext sc = new JavaSparkContext(new SparkConf()
         	.setAppName("Bio Application")
-        	//.set("spark.core.connection.ack.wait.timeout","600")
-        	//.set("spark.driver.maxResultSize", "12g")
-        	//.set("spark.driver.memory", "12g")
-        	//.set("spark.executor.memory", "12g")
         	);
 		
 //		// for development

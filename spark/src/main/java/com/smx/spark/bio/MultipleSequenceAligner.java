@@ -71,8 +71,6 @@ public class MultipleSequenceAligner {
 	
 	// program arguments: src/main/resources/sequencePairs.txt
 	public static void main(String[] args) {
-		 
-		//WriteDNASequence.wholeTextFilesBug();
 		
 		Date date = new Date();
 		logger.info(date.toString());
